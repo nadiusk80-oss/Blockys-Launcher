@@ -12,7 +12,7 @@ Blockys does not include or distribute Minecraft. A legitimate Minecraft Java Ed
 
 ## Download
 
-Download the latest installer from [GitHub Releases](https://github.com/YOUR_USERNAME/blockys-launcher/releases/latest).
+Download the latest installer from [GitHub Releases](https://github.com/nadiusk80-oss/blockys-launcher/releases/latest).
 
 The combined installer automatically installs:
 
@@ -62,7 +62,7 @@ signtool verify /pa /v Blockys-Setup-*.exe
 Clone the repository:
 
 ```bat
-git clone https://github.com/YOUR_USERNAME/blockys-launcher.git
+git clone https://github.com/nadiusk80-oss/blockys-launcher.git
 cd blockys-launcher
 ```
 
@@ -112,9 +112,9 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 ### Team roles
 
-- Authors and committers: [@YOUR_USERNAME](https://github.com/YOUR_USERNAME)
-- Reviewers: [@YOUR_USERNAME](https://github.com/YOUR_USERNAME)
-- Approvers: [@YOUR_USERNAME](https://github.com/YOUR_USERNAME)
+- Authors and committers: [@nadiusk80-oss](https://github.com/nadiusk80-oss)
+- Reviewers: [@nadiusk80-oss](https://github.com/nadiusk80-oss)
+- Approvers: [@nadiusk80-oss](https://github.com/nadiusk80-oss)
 
 External contributions are reviewed by the maintainer before merge. Every signing request is approved by a maintainer before the release is signed.
 
