@@ -1,0 +1,192 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.13"
+  PYINSTALLER_VERSION: "6.22.3"
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            python_arch: x64
+            app_dir: Blockys
+            build_args: ""
+          - arch: x86
+            python_arch: x86
+            app_dir: Blockys32
+            build_args: "--x86-app"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: ${{ matrix.python_arch }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt "pyinstaller==${{ env.PYINSTALLER_VERSION }}"
+
+      - name: Build application
+        run: python build.py ${{ matrix.build_args }}
+
+      - name: Upload unsigned application
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        id: upload-unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-unsigned-${{ matrix.arch }}
+          path: dist/${{ matrix.app_dir }}
+          if-no-files-found: error
+
+      - name: Sign application
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_APP_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed-${{ matrix.arch }}
+
+      - name: Apply signed binaries
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Copy-Item -Path "dist/signed-${{ matrix.arch }}/*" -Destination "dist/${{ matrix.app_dir }}" -Recurse -Force
+
+      - name: Upload application
+        uses: actions/upload-artifact@v7
+        with:
+          name: blockys-${{ matrix.arch }}
+          path: dist/${{ matrix.app_dir }}
+          if-no-files-found: error
+
+  installer:
+    name: Combined installer
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: x64
+
+      - name: Download x64 build
+        uses: actions/download-artifact@v8
+        with:
+          name: blockys-x64
+          path: dist/Blockys
+
+      - name: Download x86 build
+        uses: actions/download-artifact@v8
+        with:
+          name: blockys-x86
+          path: dist/Blockys32
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: python build.py --installer-only
+
+      - name: Upload unsigned installer
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        id: upload-setup
+        uses: actions/upload-artifact@v7
+        with:
+          name: setup-unsigned
+          path: dist/Blockys-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Sign installer
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_INSTALLER_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed-setup
+
+      - name: Replace installer with signed copy
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Copy-Item -Path "dist/signed-setup/*" -Destination dist -Recurse -Force
+
+      - name: Verify signatures
+        if: vars.SIGNPATH_ORGANIZATION_ID != '' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $files = @("dist/Blockys/Blockys.exe", "dist/Blockys32/Blockys.exe") + (Get-ChildItem "dist/Blockys-Setup-*.exe").FullName
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file
+            if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "SignPath Foundation") {
+              throw "Invalid signature on $file ($($signature.Status))"
+            }
+          }
+
+      - name: Write checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem "dist/Blockys-Setup-*.exe" | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Set-Content -Path "dist/SHA256SUMS.txt" -Encoding ascii
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v7
+        with:
+          name: blockys-setup
+          path: |
+            dist/Blockys-Setup-*.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: installer
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@v8
+        with:
+          name: blockys-setup
+          path: release
+
+      - name: Create GitHub release
+        run: gh release create "$GITHUB_REF_NAME" release/*.exe release/SHA256SUMS.txt --title "Blockys $GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
