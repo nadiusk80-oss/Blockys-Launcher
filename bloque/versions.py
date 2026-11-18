@@ -177,10 +177,9 @@ def merge_version(child: dict, parent: dict) -> dict:
     elif "arguments" in merged and not child.get("arguments"):
         pass
 
-    if "downloads" in child:
-        merged["downloads"] = copy.deepcopy(child["downloads"])
-    else:
-        merged.pop("downloads", None)
+    child_downloads = child.get("downloads")
+    if isinstance(child_downloads, dict) and child_downloads:
+        merged["downloads"] = copy.deepcopy(child_downloads)
 
     libraries: dict[str, dict] = {}
     for index, lib in enumerate(parent.get("libraries") or []):
