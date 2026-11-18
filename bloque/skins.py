@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import uuid as uuidlib
 from pathlib import Path
@@ -46,6 +47,7 @@ def validate_skin(path: Path) -> tuple[int, int]:
 
 
 def import_skin(profile: dict, source: Path) -> Path:
+    source = Path(source)
     validate_skin(source)
     paths.SKINS_DIR.mkdir(parents=True, exist_ok=True)
     ident = "".join(ch for ch in str(profile.get("uuid") or "")
@@ -53,8 +55,22 @@ def import_skin(profile: dict, source: Path) -> Path:
     if not ident:
         ident = uuidlib.uuid4().hex
     dest = paths.SKINS_DIR / f"{ident}.png"
-    shutil.copyfile(source, dest)
     profile["skin"] = dest.name
+    try:
+        if source.resolve() == dest.resolve():
+            return dest
+    except OSError:
+        pass
+    tmp = dest.with_name(dest.name + ".part")
+    try:
+        shutil.copyfile(source, tmp)
+        os.replace(tmp, dest)
+    except OSError as exc:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise SkinError(f"No se pudo guardar la skin: {exc}") from exc
     return dest
 
 
@@ -80,7 +96,7 @@ def render_head(path: Path, size: int = 96, background=None) -> Image.Image:
 def render_body(path: Path, scale: int = 6, background=None) -> Image.Image:
     with Image.open(path) as source:
         img = _base(source)
-    width, height = img.size
+    _, height = img.size
     canvas = Image.new("RGBA", (16, 32), (0, 0, 0, 0))
 
     canvas.alpha_composite(img.crop((8, 8, 16, 16)), (4, 0))
