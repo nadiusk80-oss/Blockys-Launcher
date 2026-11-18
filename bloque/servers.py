@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
+import shutil
 import socket
 import struct
 import time
@@ -23,6 +25,8 @@ class _Reader:
         self.pos = 0
 
     def take(self, count: int) -> bytes:
+        if count < 0:
+            raise ServerError("La lista de servidores está dañada")
         end = self.pos + count
         if end > len(self.data):
             raise ServerError("La lista de servidores está incompleta")
@@ -55,7 +59,9 @@ class _Reader:
         length = self.u2()
         return self.take(length).decode("utf-8", "replace")
 
-    def payload(self, tag: int):
+    def payload(self, tag: int, depth: int = 0):
+        if depth > 64:
+            raise ServerError("La lista de servidores está dañada")
         if tag == 1:
             return struct.unpack(">b", self.take(1))[0]
         if tag == 2:
@@ -75,7 +81,7 @@ class _Reader:
         if tag == 9:
             child = self.u1()
             count = self.i4()
-            return [self.payload(child) for _ in range(max(0, count))]
+            return [self.payload(child, depth + 1) for _ in range(max(0, count))]
         if tag == 10:
             compound = {}
             while True:
@@ -83,7 +89,7 @@ class _Reader:
                 if child == 0:
                     return compound
                 name = self.string()
-                compound[name] = self.payload(child)
+                compound[name] = self.payload(child, depth + 1)
         if tag == 11:
             count = self.i4()
             return [self.i4() for _ in range(max(0, count))]
@@ -181,7 +187,7 @@ def _read_root(data: bytes) -> dict:
     return root if isinstance(root, dict) else {}
 
 
-def _load(path: Path) -> dict:
+def _load_file(path: Path) -> dict:
     path = Path(path)
     if not path.is_file():
         return {"servers": []}
@@ -198,12 +204,44 @@ def _load(path: Path) -> dict:
             raise ServerError("La lista de servidores está dañada") from exc
     try:
         root = _read_root(raw)
-    except (struct.error, IndexError, EOFError) as exc:
+    except (struct.error, IndexError, EOFError, RecursionError) as exc:
         raise ServerError("La lista de servidores está dañada") from exc
     entries = root.get("servers")
     if not isinstance(entries, list):
         root["servers"] = []
     return root
+
+
+def _backup_path(path: Path) -> Path:
+    return Path(path).with_name(Path(path).name + ".bak")
+
+
+def _load(path: Path) -> dict:
+    path = Path(path)
+    try:
+        return _load_file(path)
+    except ServerError:
+        backup = _backup_path(path)
+        if backup.is_file():
+            try:
+                return _load_file(backup)
+            except ServerError:
+                pass
+        raise
+
+
+def _write_backup(path: Path) -> None:
+    backup = _backup_path(path)
+    tmp = backup.with_name(backup.name + ".part")
+    try:
+        with open(path, "rb") as src, open(tmp, "wb") as out:
+            shutil.copyfileobj(src, out)
+        os.replace(tmp, backup)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
 
 
 def _save(path: Path, root: dict) -> None:
@@ -212,6 +250,13 @@ def _save(path: Path, root: dict) -> None:
     body = b"\x0a" + _write_string("") + _write_payload(root, 10)
     tmp = path.with_name(path.name + ".part")
     try:
+        if path.is_file():
+            try:
+                _load_file(path)
+            except ServerError:
+                pass
+            else:
+                _write_backup(path)
         tmp.write_bytes(gzip.compress(body, mtime=0))
         tmp.replace(path)
     except OSError as exc:
@@ -332,7 +377,7 @@ def _read_varint(read) -> int:
     raise ServerError("El servidor envió una respuesta inválida")
 
 
-def _write_string(value: str) -> bytes:
+def _write_varint_string(value: str) -> bytes:
     raw = value.encode("utf-8")
     return _encode_varint(len(raw)) + raw
 
@@ -357,6 +402,13 @@ def _status_text(description) -> str:
     return " ".join(text.split())
 
 
+def _as_int(value) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def ping(address: str, timeout: float = 3.5) -> dict:
     host, port = split_address(address)
     started = time.perf_counter()
@@ -372,7 +424,7 @@ def ping(address: str, timeout: float = 3.5) -> dict:
         sock.settimeout(timeout)
         stream = sock.makefile("rb")
         handshake = (_encode_varint(0) + _encode_varint(STATUS_PROTOCOL)
-                     + _write_string(host) + struct.pack(">H", port)
+                     + _write_varint_string(host) + struct.pack(">H", port)
                      + _encode_varint(1))
         sock.sendall(_encode_varint(len(handshake)) + handshake)
         sock.sendall(b"\x01\x00")
@@ -411,8 +463,8 @@ def ping(address: str, timeout: float = 3.5) -> dict:
     latency = int((time.perf_counter() - started) * 1000)
     return {
         "version": str(version.get("name") or ""),
-        "online": int(players.get("online") or 0),
-        "max": int(players.get("max") or 0),
+        "online": _as_int(players.get("online")),
+        "max": _as_int(players.get("max")),
         "motd": _status_text(data.get("description"))[:120],
         "latency": latency,
     }
