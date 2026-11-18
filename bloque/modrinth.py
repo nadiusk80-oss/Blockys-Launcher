@@ -261,9 +261,10 @@ def check_updates(instance: dict, project_type: str = "mod",
     updated: list[Path] = []
     for old_hash, version in (response or {}).items():
         old_path = local.get(old_hash)
-        if old_path is None:
+        if old_path is None or not isinstance(version, dict):
             continue
-        files = version.get("files") or []
+        files = [item for item in (version.get("files") or [])
+                 if isinstance(item, dict)]
         file = next((item for item in files if item.get("primary")),
                     files[0] if files else None)
         if not file or not file.get("url"):
@@ -330,7 +331,11 @@ def import_mrpack(source: Path, store: instances.InstanceStore,
             index = json.loads(archive.read("modrinth.index.json").decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as exc:
             raise ModrinthError("modrinth.index.json invalido") from exc
-        deps = index.get("dependencies") or {}
+        if not isinstance(index, dict):
+            raise ModrinthError("modrinth.index.json invalido")
+        deps = index.get("dependencies")
+        if not isinstance(deps, dict):
+            deps = {}
         game = str(deps.get("minecraft") or "")
         if not game:
             raise ModrinthError("El modpack no indica la version de Minecraft")
@@ -342,18 +347,22 @@ def import_mrpack(source: Path, store: instances.InstanceStore,
                 loader = value
                 loader_version = str(deps[key])
                 break
-        instance = store.create(name or index.get("name") or source.stem,
+        instance = store.create(str(name or index.get("name") or source.stem),
                                 game, loader)
         instance["loader_version"] = loader_version
         store.ensure_dirs(instance)
         folder = store.game_dir(instance)
-        files = index.get("files") or []
+        files = index.get("files")
+        if not isinstance(files, list):
+            files = []
         try:
             for position, entry in enumerate(files):
                 if cancel_event is not None and cancel_event.is_set():
                     raise net.Cancelled()
-                env = (entry.get("env") or {}).get("client")
-                if env == "unsupported":
+                if not isinstance(entry, dict):
+                    continue
+                env_info = entry.get("env")
+                if isinstance(env_info, dict) and env_info.get("client") == "unsupported":
                     continue
                 relative = Path(str(entry.get("path") or "")).as_posix()
                 if not relative:
@@ -361,12 +370,16 @@ def import_mrpack(source: Path, store: instances.InstanceStore,
                 target = (folder / relative).resolve()
                 if folder.resolve() not in target.parents:
                     continue
-                downloads = entry.get("downloads") or []
-                if not downloads:
+                downloads = entry.get("downloads")
+                if not isinstance(downloads, list) or not downloads:
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
-                hashes = entry.get("hashes") or {}
+                hashes = entry.get("hashes")
+                if not isinstance(hashes, dict):
+                    hashes = {}
                 size = entry.get("fileSize")
+                if not isinstance(size, int):
+                    size = None
                 if on_status:
                     on_status(f"Modpack: {Path(relative).name}")
                 net.download_one(downloads[0], target, sha1=hashes.get("sha1"),
