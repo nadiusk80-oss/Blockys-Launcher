@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 from . import paths
-from .util import load_json, safe_extract, save_json
+from .util import load_json, save_json
 
 LOADERS = {
     "vanilla": "Vanilla",

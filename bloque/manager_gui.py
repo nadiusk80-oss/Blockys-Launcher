@@ -13,7 +13,7 @@ from tkinter import filedialog
 
 from . import diagnostics, instances, modrinth, servers
 from .ui import (ACCENT, BG, BORDER, BORDER_SOFT, CARD, DANGER, DISPLAY,
-                 FAINT, FONT, GRASS, INPUT, LOG_BG, MONO, MUTED, PANEL, TEXT,
+                 FAINT, FONT, GRASS, LOG_BG, MONO, MUTED, PANEL, TEXT,
                  WARN, Button, Check, Input, Progress, ScrollFrame, Select,
                  Slider, ThinScroll, divider, enable_dark_titlebar, label,
                  section, set_app_icon, show_error, show_info, show_warning,
@@ -2348,7 +2348,7 @@ class ModrinthDialog(tk.Toplevel):
                     show_error(self, "Modrinth",
                                str(payload.get("msg") or payload))
                 elif kind == "installed":
-                    title, path = payload
+                    title = payload[0]
                     self.status_var.set(f"{title} instalado")
                     self._installed_any = True
                     if self.on_installed:

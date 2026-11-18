@@ -15,7 +15,7 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 
 from . import (APP_TITLE, __version__, accounts, diagnostics, instances,
-               launch, loaders, net, paths, skins, ui, versions)
+               launch, loaders, net, paths, skins, ui, updates, versions)
 from .accounts import AuthError, ProfileStore
 from .ui import (ACCENT, ACCENT_INK, BG, BORDER, BORDER_SOFT, CARD, DANGER,
                  DISPLAY, FAINT, FONT, GRASS, LOG_BG, MONO, MUTED, PANEL, TEXT,
@@ -2369,13 +2369,79 @@ class HelpDialog(tk.Toplevel):
                   "nunca se borran al actualizar o desinstalar Blockys.")
 
         ui.divider(content, top=18, bottom=14)
+        ui.section(content, "Actualizaciones").pack(fill="x")
+        update_row = tk.Frame(content, bg=PANEL)
+        update_row.pack(fill="x", pady=(6, 0))
+        self.update_btn = ui.Button(update_row, "Buscar actualizaciones",
+                                    kind="quiet", command=self._check_updates,
+                                    width=176, height=32, font=(FONT, 8))
+        self.update_btn.pack(side="left")
+        self.update_status = tk.Label(
+            update_row, text=f"Versión instalada: {__version__}",
+            bg=PANEL, fg=FAINT, font=(FONT, 8), anchor="w")
+        self.update_status.pack(side="left", fill="x", expand=True,
+                                padx=(10, 0))
+
+        ui.divider(content, top=18, bottom=14)
         ui.section(content, "Información").pack(fill="x")
+        paragraph("Novedades de 1.0.1: se corrigió la lista de servidores, la "
+                  "importación de skins, la instalación de mods de Modrinth y "
+                  "el diagnóstico. Ahora las listas de servidores se respaldan "
+                  "solas y los registros viejos del juego se limpian.")
         paragraph("Blockys no distribuye Minecraft. Para jugar en servidores "
                   "premium necesitás una licencia oficial de Minecraft Java "
                   "Edition. No está afiliado a Mojang, Microsoft, Modrinth ni "
                   "Prism Launcher.")
 
         tk.Frame(content, bg=PANEL, height=6).pack(fill="x")
+
+    def _check_updates(self) -> None:
+        self.update_btn.configure(state="disabled")
+        self.update_status.configure(text="Buscando actualizaciones...",
+                                     fg=FAINT)
+
+        def work():
+            try:
+                result = updates.check_latest()
+            except updates.UpdateError as exc:
+                message = str(exc)
+                self._post_update(lambda: self._update_failed(message, True))
+            except Exception as exc:
+                message = f"Error inesperado: {exc}"
+                self._post_update(lambda: self._update_failed(message, False))
+            else:
+                self._post_update(lambda: self._show_update(result))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _post_update(self, callback) -> None:
+        try:
+            self.after(0, callback)
+        except tk.TclError:
+            pass
+
+    def _update_failed(self, message: str, warn: bool) -> None:
+        if not self.winfo_exists():
+            return
+        self.update_btn.configure(state="normal")
+        self.update_status.configure(text=message, fg=WARN if warn else DANGER)
+
+    def _show_update(self, result: dict) -> None:
+        if not self.winfo_exists():
+            return
+        self.update_btn.configure(state="normal")
+        if result["newer"]:
+            self.update_status.configure(
+                text=f"Hay una versión nueva: {result['tag']}", fg=GRASS)
+            if ui.ask_confirm(
+                    self, "Actualización disponible",
+                    f"Tenés la {result['current']} y la última publicada es "
+                    f"{result['tag']}.\n\n¿Abrir la página de descarga?",
+                    ok_text="Abrir página"):
+                webbrowser.open(result["url"])
+        else:
+            self.update_status.configure(
+                text=f"Estás al día ({result['current']})", fg=GRASS)
 
     def _close(self) -> None:
         if self.app._help_window is self:

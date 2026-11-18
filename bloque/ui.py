@@ -10,7 +10,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog
 
-from PIL import Image, ImageDraw, ImageFilter, ImageTk
+from PIL import Image, ImageDraw, ImageFilter
 
 from . import __version__, java, paths
 
