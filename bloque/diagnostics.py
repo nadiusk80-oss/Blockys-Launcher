@@ -156,7 +156,7 @@ def _java_report() -> list[str]:
 def _settings_report(settings: dict) -> list[str]:
     keys = ("memory_mb", "game_dir", "java_mode", "java_path", "resolution_width",
             "resolution_height", "custom_resolution", "copy_skin_mod",
-            "aikar_flags", "version_type", "instance_sort")
+            "aikar_flags", "version_type", "instance_sort", "client_id")
     lines = []
     for key in keys:
         value = settings.get(key, "")
@@ -307,7 +307,8 @@ def export_report(dest: Path, settings: dict, instance_store,
 def record_crash(exc_type, exc, tb, context: str = "") -> Path | None:
     try:
         paths.LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        path = paths.LOGS_DIR / time.strftime("crash-%Y%m%d-%H%M%S.log")
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = paths.LOGS_DIR / f"crash-{stamp}-{int(time.time() * 1000) % 1000:03d}.log"
         body = [
             f"Blockys {__version__} - error no controlado",
             f"Fecha: {time.strftime('%Y-%m-%d %H:%M:%S')}",
