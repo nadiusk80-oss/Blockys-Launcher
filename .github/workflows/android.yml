@@ -1,0 +1,52 @@
+name: android
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Prepare resources
+        run: |
+          mkdir -p android/app/src/main/res/drawable
+          cp bloque/assets/icon.png android/app/src/main/res/drawable/icon.png
+          mkdir -p android/app/src/main/assets
+          cp bloque/assets/icon.png android/app/src/main/assets/icon.png
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Blockys-Movil-1.0.0.apk
+
+      - name: Publish mobile release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mobile-v1.0.0
+          name: Blockys Móvil 1.0.0
+          body: |
+            App compañera de Blockys para Android.
+
+            - Acceso a la descarga del launcher para Windows.
+            - Guía para jugar Minecraft Java con PojavLauncher.
+            - Pasos para pasar tus instancias exportadas.
+
+            El APK tiene firma de depuración: instalalo con "Instalar apps desconocidas".
+          files: Blockys-Movil-1.0.0.apk
+          make_latest: false
