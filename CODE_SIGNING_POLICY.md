@@ -52,7 +52,7 @@ policies.
 ## Release process
 
 1. Update `__version__` in `bloque/__init__.py`.
-2. Push a tag `v<version>` (for example `v1.0.1`).
+2. Push a tag `v<version>` (for example `v1.0.2`).
 3. The workflow builds both architectures, signs them, assembles the combined
    installer from the signed builds, signs the installer, and attaches the
    result to the GitHub release.
@@ -64,7 +64,7 @@ policies.
 On Windows, check the publisher of a downloaded file:
 
 ```powershell
-Get-AuthenticodeSignature .\Blockys-Setup-1.0.1.exe | Format-List
+Get-AuthenticodeSignature .\Blockys-Setup-1.0.2.exe | Format-List
 ```
 
 The status must be `Valid` and the signer subject must contain

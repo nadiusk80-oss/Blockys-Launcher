@@ -21,6 +21,17 @@ The combined installer automatically installs:
 
 Release artifacts are built from the source in this repository by GitHub Actions and are signed through SignPath Foundation. Every signing request requires manual approval by a maintainer.
 
+## What's new in 1.0.2
+
+- Downloads cancel instantly, resume from a partial file and are verified against their SHA-1.
+- Existing files are re-checked against their hashes before being reused.
+- All saved servers can be tested at once from the instance tab.
+- Microsoft session refresh survives temporary network failures.
+- The optional local skin copy can no longer block game start.
+- Instance exports are written atomically and imported packages are validated.
+- Missing Java runtimes are installed only after confirmation.
+- Settings, accounts and instances are saved with a `.bak` backup.
+
 To verify a signed release on Windows:
 
 ```bat
