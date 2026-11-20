@@ -2,10 +2,6 @@ name: android
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "android/**"
-      - ".github/workflows/android.yml"
 
 permissions:
   contents: write
@@ -52,7 +48,10 @@ jobs:
             - Al volver de instalar, abre el juego automáticamente.
             - Guía de cuenta Microsoft, controles e importación de instancias.
 
+            PojavLauncher es un proyecto de PojavLauncherTeam y colaboradores, bajo GNU LGPL-3.0.
+            Blockys Móvil no está afiliado ni respaldado por PojavLauncherTeam, Mojang Studios ni
+            Microsoft, y no distribuye PojavLauncher: lo descarga desde su repositorio oficial.
+
             El APK tiene firma de depuración: instalalo con "Instalar apps desconocidas".
-            PojavLauncher se descarga desde su repositorio oficial (GPL-3.0) y no se distribuye dentro de esta app.
           files: Blockys-Movil-1.1.0.apk
           make_latest: false
