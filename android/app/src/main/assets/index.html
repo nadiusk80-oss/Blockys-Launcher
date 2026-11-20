@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blockys Móvil</title>
+  <meta name="theme-color" content="#f4efe2">
+  <style>
+    :root {
+      --paper: #f4efe2;
+      --card: #fffdf6;
+      --ink: #23211c;
+      --muted: #6b6559;
+      --line: #ddd5c3;
+      --green: #3f6b32;
+      --green-dark: #2f5226;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Segoe UI", Roboto, Arial, sans-serif;
+      line-height: 1.5;
+      padding: 20px 16px 32px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      max-width: 560px;
+      margin: 0 auto 18px;
+    }
+
+    header img {
+      width: 56px;
+      height: 56px;
+      image-rendering: pixelated;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.5px;
+    }
+
+    header p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    main {
+      max-width: 560px;
+      margin: 0 auto;
+      display: grid;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 16px 18px;
+      box-shadow: 0 2px 0 rgba(35, 33, 28, 0.06);
+    }
+
+    h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    p { margin: 0 0 12px; }
+
+    .btn {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      background: var(--green);
+      color: #fff;
+      font-weight: 600;
+      padding: 13px 16px;
+      border-radius: 10px;
+      margin-top: 10px;
+    }
+
+    .btn:active { background: var(--green-dark); }
+
+    .btn.ghost {
+      background: transparent;
+      color: var(--green);
+      border: 1px solid var(--green);
+    }
+
+    ol {
+      margin: 0 0 10px;
+      padding-left: 20px;
+    }
+
+    ol li { margin-bottom: 8px; }
+
+    .fine {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0;
+    }
+
+    footer {
+      max-width: 560px;
+      margin: 22px auto 0;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="icon.png" alt="Icono de Blockys">
+    <div>
+      <h1>Blockys Móvil</h1>
+      <p>Compañera de Blockys para tu teléfono</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Instalar Blockys en la PC</h2>
+      <p>El launcher corre en Windows 10 u 11, de 64 y 32 bits, con un solo setup.</p>
+      <a class="btn" href="https://github.com/nadiusk80-oss/Blockys-Launcher/releases/latest">Abrir la descarga</a>
+    </section>
+
+    <section class="card">
+      <h2>Jugar Minecraft Java en Android</h2>
+      <p>Minecraft Java no trae launcher para Android. La forma establecida de jugarlo es PojavLauncher, que ejecuta Java y el juego en el teléfono.</p>
+      <a class="btn ghost" href="https://play.google.com/store/apps/details?id=net.kdt.pojavlaunch">PojavLauncher en Play Store</a>
+      <a class="btn ghost" href="https://github.com/PojavLauncherTeam/PojavLauncher">PojavLauncher en GitHub</a>
+    </section>
+
+    <section class="card">
+      <h2>Pasar una instancia de Blockys</h2>
+      <ol>
+        <li>En Blockys, abrí la instancia y elegí Exportar. Se genera un archivo .zip.</li>
+        <li>Pasá el .zip al teléfono por cable, nube o Bluetooth.</li>
+        <li>En PojavLauncher, usá Importar y elegí el .zip.</li>
+        <li>Iniciá sesión con tu cuenta Microsoft y jugá.</li>
+      </ol>
+      <p class="fine">Tus cuentas, instancias y skins quedan en tu PC. Esta app no recolecta datos.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Blockys Móvil 1.0.0 · GPL-3.0</p>
+    <p>No distribuye Minecraft ni está afiliada a Mojang Studios, Microsoft o PojavLauncher.</p>
+  </footer>
+</body>
+</html>
