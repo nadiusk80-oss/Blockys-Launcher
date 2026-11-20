@@ -14,6 +14,8 @@
       --line: #ddd5c3;
       --green: #3f6b32;
       --green-dark: #2f5226;
+      --amber: #8a5a12;
+      --red: #9b2f2f;
     }
 
     * { box-sizing: border-box; }
@@ -68,6 +70,11 @@
       box-shadow: 0 2px 0 rgba(35, 33, 28, 0.06);
     }
 
+    .card.play {
+      border-color: var(--green);
+      box-shadow: 0 3px 0 rgba(63, 107, 50, 0.18);
+    }
+
     h2 {
       margin: 0 0 8px;
       font-size: 18px;
@@ -75,25 +82,82 @@
 
     p { margin: 0 0 12px; }
 
+    .pill {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .pill.on {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
     .btn {
       display: block;
+      width: 100%;
       text-align: center;
       text-decoration: none;
       background: var(--green);
       color: #fff;
+      font: inherit;
       font-weight: 600;
-      padding: 13px 16px;
+      border: 0;
+      padding: 14px 16px;
       border-radius: 10px;
       margin-top: 10px;
+      cursor: pointer;
     }
 
     .btn:active { background: var(--green-dark); }
+
+    .btn[disabled] {
+      opacity: 0.55;
+      cursor: default;
+    }
 
     .btn.ghost {
       background: transparent;
       color: var(--green);
       border: 1px solid var(--green);
     }
+
+    .progress {
+      display: none;
+      margin-top: 12px;
+    }
+
+    .progress.show { display: block; }
+
+    .bar {
+      height: 8px;
+      background: var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--green);
+      border-radius: 999px;
+      transition: width 0.25s ease;
+    }
+
+    .note {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .note.warn { color: var(--amber); }
+    .note.err { color: var(--red); }
 
     ol {
       margin: 0 0 10px;
@@ -124,22 +188,32 @@
     <img src="icon.png" alt="Icono de Blockys">
     <div>
       <h1>Blockys Móvil</h1>
-      <p>Compañera de Blockys para tu teléfono</p>
+      <p>Tu launcher de Minecraft Java para Android</p>
     </div>
   </header>
 
   <main>
-    <section class="card">
-      <h2>Instalar Blockys en la PC</h2>
-      <p>El launcher corre en Windows 10 u 11, de 64 y 32 bits, con un solo setup.</p>
-      <a class="btn" href="https://github.com/nadiusk80-oss/Blockys-Launcher/releases/latest">Abrir la descarga</a>
+    <section class="card play">
+      <h2>Jugar ahora</h2>
+      <span class="pill" id="pill">Comprobando...</span>
+      <p id="lead">Blockys Móvil instala PojavLauncher, el motor que hace correr Minecraft Java en el teléfono, y lo abre por vos.</p>
+      <button class="btn" id="play" type="button" hidden>Jugar</button>
+      <a class="btn ghost" id="store" href="https://play.google.com/store/apps/details?id=net.kdt.pojavlaunch">También está en Play Store</a>
+      <div class="progress" id="progress">
+        <div class="bar"><span id="fill"></span></div>
+        <p class="note" id="message"></p>
+      </div>
+      <p class="note" id="hint" hidden></p>
     </section>
 
     <section class="card">
-      <h2>Jugar Minecraft Java en Android</h2>
-      <p>Minecraft Java no trae launcher para Android. La forma establecida de jugarlo es PojavLauncher, que ejecuta Java y el juego en el teléfono.</p>
-      <a class="btn ghost" href="https://play.google.com/store/apps/details?id=net.kdt.pojavlaunch">PojavLauncher en Play Store</a>
-      <a class="btn ghost" href="https://github.com/PojavLauncherTeam/PojavLauncher">PojavLauncher en GitHub</a>
+      <h2>Cuenta y controles</h2>
+      <ol>
+        <li>Iniciá sesión con tu cuenta Microsoft en PojavLauncher, igual que en la PC.</li>
+        <li>Elegí la versión de Minecraft y el perfil de rendimiento según tu teléfono.</li>
+        <li>Conectá un teclado Bluetooth o usá los controles táctiles.</li>
+      </ol>
+      <p class="fine">Minecraft Java pesa varios cientos de MB entre versión y librerías: la primera partida tarda más.</p>
     </section>
 
     <section class="card">
@@ -148,15 +222,127 @@
         <li>En Blockys, abrí la instancia y elegí Exportar. Se genera un archivo .zip.</li>
         <li>Pasá el .zip al teléfono por cable, nube o Bluetooth.</li>
         <li>En PojavLauncher, usá Importar y elegí el .zip.</li>
-        <li>Iniciá sesión con tu cuenta Microsoft y jugá.</li>
       </ol>
       <p class="fine">Tus cuentas, instancias y skins quedan en tu PC. Esta app no recolecta datos.</p>
+    </section>
+
+    <section class="card">
+      <h2>Blockys en la PC</h2>
+      <p>El launcher completo corre en Windows 10 u 11, de 64 y 32 bits, con un solo setup.</p>
+      <a class="btn ghost" href="https://github.com/nadiusk80-oss/Blockys-Launcher/releases/latest">Abrir la descarga</a>
     </section>
   </main>
 
   <footer>
-    <p>Blockys Móvil 1.0.0 · GPL-3.0</p>
+    <p>Blockys Móvil 1.1.0 · GPL-3.0</p>
     <p>No distribuye Minecraft ni está afiliada a Mojang Studios, Microsoft o PojavLauncher.</p>
   </footer>
+
+  <script>
+    (function () {
+      var native = window.Native;
+      var play = document.getElementById('play');
+      var pill = document.getElementById('pill');
+      var lead = document.getElementById('lead');
+      var progress = document.getElementById('progress');
+      var fill = document.getElementById('fill');
+      var message = document.getElementById('message');
+      var hint = document.getElementById('hint');
+      var store = document.getElementById('store');
+      var installed = false;
+
+      function setPill(text, on) {
+        pill.textContent = text;
+        pill.className = on ? 'pill on' : 'pill';
+      }
+
+      function setMessage(text, kind) {
+        progress.classList.add('show');
+        message.textContent = text;
+        message.className = 'note' + (kind ? ' ' + kind : '');
+      }
+
+      function setProgress(value) {
+        progress.classList.add('show');
+        fill.style.width = Math.max(0, Math.min(100, value)) + '%';
+      }
+
+      function refresh() {
+        if (!native) {
+          play.hidden = false;
+          play.textContent = 'Instalar PojavLauncher';
+          setPill('Modo navegador', false);
+          lead.textContent = 'Desde la app, Blockys Móvil instala PojavLauncher y lo abre solo. Acá podés abrir la tienda.';
+          return;
+        }
+        installed = !!native.installed();
+        play.hidden = false;
+        if (installed) {
+          setPill('PojavLauncher listo', true);
+          play.textContent = 'Abrir PojavLauncher';
+          play.disabled = false;
+          lead.textContent = 'Un toque y arranca PojavLauncher con tu cuenta y tus instancias.';
+          hint.hidden = true;
+        } else {
+          setPill('PojavLauncher no instalado', false);
+          play.textContent = 'Instalar y jugar';
+          play.disabled = false;
+          lead.textContent = 'Blockys Móvil descarga PojavLauncher (unos 154 MB) y abre el instalador por vos.';
+          hint.hidden = true;
+        }
+      }
+
+      play.addEventListener('click', function () {
+        if (!native) {
+          window.location.href = 'https://github.com/PojavLauncherTeam/PojavLauncher/releases/latest';
+          return;
+        }
+        if (installed) {
+          native.launch();
+          return;
+        }
+        play.disabled = true;
+        play.textContent = 'Preparando...';
+        setProgress(0);
+        setMessage('Comprobando permiso de instalación...', 'warn');
+        hint.hidden = false;
+        hint.textContent = 'Si Android lo pide, activá «Instalar apps desconocidas» para Blockys Móvil. Descargá con Wi-Fi.';
+        native.install();
+      });
+
+      store.addEventListener('click', function (event) {
+        if (native) {
+          event.preventDefault();
+          native.openPage(store.href);
+        }
+      });
+
+      window.nativeEvent = function (type, text, value) {
+        if (type === 'state') {
+          refresh();
+          return;
+        }
+        if (type === 'progress') {
+          setProgress(value || 0);
+          setMessage(text || '', 'warn');
+          return;
+        }
+        if (type === 'done') {
+          setProgress(100);
+          setMessage(text || 'Listo.', '');
+          play.disabled = false;
+          return;
+        }
+        if (type === 'error') {
+          setMessage(text || 'Algo falló.', 'err');
+          play.disabled = false;
+          play.textContent = installed ? 'Abrir PojavLauncher' : 'Reintentar instalación';
+          return;
+        }
+      };
+
+      refresh();
+    })();
+  </script>
 </body>
 </html>
