@@ -175,6 +175,15 @@ Report security vulnerabilities through GitHub private vulnerability reporting. 
 
 Blockys is distributed under the terms of the [LICENSE](LICENSE) file.
 
+## Blockys Móvil (Android)
+
+Blockys Móvil is a separate project for Android: an unofficial fork of
+[PojavLauncher](https://github.com/PojavLauncherTeam/PojavLauncher) by PojavLauncherTeam and
+contributors, distributed under the GNU Lesser General Public License v3.0 (LGPL-3.0). The fork
+only changes the app name, icons, logo and accent color, and uses its own build workflow. The
+modified source, the attribution notices and the list of changes are published in
+[nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil).
+
 ## Legal notice
 
-Blockys is not affiliated with Mojang, Microsoft, Modrinth or Prism Launcher. Minecraft is a trademark of Mojang Studios.
+Blockys is not affiliated with Mojang, Microsoft, Modrinth, Prism Launcher or PojavLauncherTeam. Minecraft is a trademark of Mojang Studios.
