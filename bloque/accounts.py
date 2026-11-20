@@ -209,16 +209,39 @@ class MicrosoftAuth:
             "refresh_token": refresh_token,
             "scope": SCOPE,
         }).encode()
-        try:
-            tokens = net.http_json(TOKEN_URL, data=body, headers=FORM, method="POST")
-        except net.HttpError as exc:
-            raise AuthError(
-                "La sesion de Microsoft expiro. Vuelve a iniciar sesion."
-            ) from exc
-        except (net.ConnectionError_, OSError) as exc:
-            raise AuthError(
-                "No hay conexion con Microsoft. Revisa tu internet e intenta de nuevo."
-            ) from exc
+        expired_codes = {"invalid_grant", "interaction_required", "consent_required",
+                         "login_required"}
+        tokens = None
+        for attempt in range(2):
+            try:
+                tokens = net.http_json(TOKEN_URL, data=body, headers=FORM,
+                                       method="POST")
+                break
+            except net.HttpError as exc:
+                code = str(exc.json().get("error") or "")
+                if exc.status in (400, 401) and code in expired_codes:
+                    raise AuthError(
+                        "La sesion de Microsoft expiro. Vuelve a iniciar sesion."
+                    ) from exc
+                if exc.status == 429 or exc.status >= 500:
+                    if attempt == 0:
+                        time.sleep(1.5)
+                        continue
+                    raise AuthError(
+                        "Microsoft no pudo renovar la sesion ahora. Intenta de nuevo."
+                    ) from exc
+                raise AuthError(
+                    f"Microsoft rechazo la renovacion ({exc.status}). Intenta de nuevo."
+                ) from exc
+            except (net.ConnectionError_, OSError) as exc:
+                if attempt == 0:
+                    time.sleep(1.5)
+                    continue
+                raise AuthError(
+                    "No hay conexion con Microsoft. Revisa tu internet e intenta de nuevo."
+                ) from exc
+        if not isinstance(tokens, dict) or not tokens.get("access_token"):
+            raise AuthError("Microsoft no devolvio un token valido. Intenta de nuevo.")
         result = self.login_with_ms_token(tokens.get("access_token", ""))
         result["refresh_token"] = tokens.get("refresh_token", refresh_token)
         return result

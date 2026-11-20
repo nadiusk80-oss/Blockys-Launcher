@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 import uuid
@@ -43,6 +44,40 @@ def _unique_name(store: list[dict], name: str) -> str:
         if candidate.casefold() not in existing:
             return candidate
     return f"{name} {int(time.time())}"
+
+
+def _as_int(value, default: int, low: int, high: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
+
+
+def _as_text(value, limit: int = 4000) -> str:
+    if isinstance(value, str):
+        return value[:limit]
+    if value is None or isinstance(value, (int, float, bool)):
+        return str(value)[:limit]
+    return ""
+
+
+def _sanitize_import(instance: dict) -> None:
+    instance["memory_mb"] = _as_int(instance.get("memory_mb"), 2048, 512, 65536)
+    instance["resolution_width"] = _as_int(instance.get("resolution_width"),
+                                           1280, 320, 7680)
+    instance["resolution_height"] = _as_int(instance.get("resolution_height"),
+                                            720, 240, 4320)
+    instance["custom_resolution"] = bool(instance.get("custom_resolution"))
+    instance["aikar_flags"] = bool(instance.get("aikar_flags"))
+    if instance.get("java_mode") not in ("inherit", "temurin", "custom"):
+        instance["java_mode"] = "inherit"
+    if instance.get("quick_play_type") not in ("none", "world", "server", "realms"):
+        instance["quick_play_type"] = "none"
+    instance["quick_play_target"] = _as_text(instance.get("quick_play_target"), 200)
+    for key in ("java_path", "jvm_args", "game_args", "env_vars", "pre_launch",
+                "post_exit", "group", "notes", "icon", "loader_version"):
+        instance[key] = _as_text(instance.get(key))
 
 
 def _default_instance(store: list[dict], name: str, version: str,
@@ -367,38 +402,47 @@ class InstanceStore:
     def export(self, instance: dict, dest: Path) -> Path:
         folder = self.game_dir(instance)
         dest = Path(dest)
+        part = dest.with_name(dest.name + ".part")
         payload = {key: value for key, value in instance.items()
                    if key not in ("resolved_version",)}
-        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr("instance.json", json.dumps(payload, indent=2,
-                                                         ensure_ascii=False))
-            if folder.is_dir():
-                for path in folder.rglob("*"):
-                    if not path.is_file():
-                        continue
-                    relative = path.relative_to(folder)
-                    archive.write(path, f"minecraft/{relative.as_posix()}")
-            icon = Path(str(instance.get("icon_path") or ""))
-            if icon.is_file():
-                try:
-                    inside = (icon.resolve() == folder.resolve()
-                              or folder.resolve() in icon.resolve().parents)
-                except OSError:
-                    inside = False
-                if not inside:
+        try:
+            with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("instance.json", json.dumps(payload, indent=2,
+                                                             ensure_ascii=False))
+                if folder.is_dir():
+                    for path in folder.rglob("*"):
+                        if not path.is_file():
+                            continue
+                        relative = path.relative_to(folder)
+                        archive.write(path, f"minecraft/{relative.as_posix()}")
+                icon = Path(str(instance.get("icon_path") or ""))
+                if icon.is_file():
                     try:
-                        import io
+                        inside = (icon.resolve() == folder.resolve()
+                                  or folder.resolve() in icon.resolve().parents)
+                    except OSError:
+                        inside = False
+                    if not inside:
+                        try:
+                            import io
 
-                        from PIL import Image
-                        with Image.open(icon) as source:
-                            image = source.convert("RGBA")
-                            image.thumbnail((256, 256), Image.LANCZOS)
-                            buffer = io.BytesIO()
-                            image.save(buffer, "PNG")
-                        archive.writestr("minecraft/blockys-icon.png",
-                                         buffer.getvalue())
-                    except (OSError, ValueError):
-                        pass
+                            from PIL import Image
+                            with Image.open(icon) as source:
+                                image = source.convert("RGBA")
+                                image.thumbnail((256, 256), Image.LANCZOS)
+                                buffer = io.BytesIO()
+                                image.save(buffer, "PNG")
+                            archive.writestr("minecraft/blockys-icon.png",
+                                             buffer.getvalue())
+                        except (OSError, ValueError):
+                            pass
+            os.replace(part, dest)
+        except Exception:
+            try:
+                part.unlink()
+            except OSError:
+                pass
+            raise
         return dest
 
     def import_zip(self, source: Path, name: str | None = None) -> dict:
@@ -421,12 +465,13 @@ class InstanceStore:
                     str(payload.get("version")), str(payload.get("loader") or "vanilla"))
                 for key in ("memory_mb", "resolution_width", "resolution_height",
                             "custom_resolution", "java_mode", "java_path",
-                            "aikar_flags", "icon", "icon_path", "group", "notes",
+                            "aikar_flags", "icon", "group", "notes",
                             "jvm_args", "game_args", "env_vars", "pre_launch",
                             "post_exit", "quick_play_type", "quick_play_target"):
                     if key in payload:
                         instance[key] = payload[key]
                 instance["loader_version"] = str(payload.get("loader_version") or "")
+                _sanitize_import(instance)
                 self.instances.append(instance)
                 self.data["selected"] = instance["id"]
                 self.save()

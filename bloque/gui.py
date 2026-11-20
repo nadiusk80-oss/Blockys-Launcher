@@ -1303,13 +1303,23 @@ class LauncherApp(tk.Tk):
         self._welcome_window = WelcomeDialog(self)
 
     def _analyze_game_log(self, path: Path | None = None) -> None:
-        target = path
-        if target is None or not target.is_file():
-            target = diagnostics.latest_game_log()
-        if target is None or not target.is_file():
-            return
-        issues = diagnostics.analyze_log(target)
-        if not issues:
+        def work():
+            target = path
+            if target is None or not target.is_file():
+                target = diagnostics.latest_game_log()
+            if target is None or not target.is_file():
+                return
+            try:
+                issues = diagnostics.analyze_log(target)
+            except Exception:
+                return
+            if issues:
+                self.after(0, lambda: self._show_log_issues(issues))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_log_issues(self, issues: list) -> None:
+        if not self.winfo_exists():
             return
         for issue in issues:
             self._log(f"Diagnóstico: {issue['title']} — {issue['hint']}", "warn")
@@ -1341,14 +1351,32 @@ class LauncherApp(tk.Tk):
             filetypes=[("Diagnóstico Blockys", "*.zip")])
         if not chosen:
             return
-        try:
-            path = diagnostics.export_report(
-                Path(chosen), self.settings, self.instance_store, self.manifest)
-        except Exception as exc:
-            self._log(f"No se pudo exportar el diagnóstico: {exc}", "err")
-            ui.show_error(self, "Diagnóstico",
-                          f"No se pudo crear el archivo:\n{exc}")
+        self.status_var.set("Creando diagnóstico...")
+
+        def work():
+            try:
+                path = diagnostics.export_report(
+                    Path(chosen), self.settings, self.instance_store,
+                    self.manifest)
+            except Exception as exc:
+                self.after(0, lambda: self._diagnostics_failed(exc))
+            else:
+                self.after(0, lambda: self._diagnostics_ready(path))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _diagnostics_failed(self, exc: Exception) -> None:
+        if not self.winfo_exists():
             return
+        self.status_var.set("No se pudo exportar el diagnóstico")
+        self._log(f"No se pudo exportar el diagnóstico: {exc}", "err")
+        ui.show_error(self, "Diagnóstico",
+                      f"No se pudo crear el archivo:\n{exc}")
+
+    def _diagnostics_ready(self, path: Path) -> None:
+        if not self.winfo_exists():
+            return
+        self.status_var.set("Diagnóstico exportado")
         self._log(f"Diagnóstico exportado: {path}", "ok")
         ui.show_info(
             self, "Diagnóstico exportado",
@@ -2191,7 +2219,12 @@ class LauncherApp(tk.Tk):
                 raise net.Cancelled()
 
             if settings.get("copy_skin_mod") and skins.skin_path(profile):
-                skins.copy_for_customskinloader(profile, Path(settings["game_dir"]))
+                try:
+                    skins.copy_for_customskinloader(profile, Path(settings["game_dir"]))
+                except OSError as exc:
+                    self._post("log",
+                               text=f"No se pudo copiar la skin local: {exc}",
+                               tag="warn")
 
             hook = launch.run_hook(settings, "pre_launch",
                                    Path(settings["game_dir"]))
@@ -2384,10 +2417,14 @@ class HelpDialog(tk.Toplevel):
 
         ui.divider(content, top=18, bottom=14)
         ui.section(content, "Información").pack(fill="x")
-        paragraph("Novedades de 1.0.1: se corrigió la lista de servidores, la "
-                  "importación de skins, la instalación de mods de Modrinth y "
-                  "el diagnóstico. Ahora las listas de servidores se respaldan "
-                  "solas y los registros viejos del juego se limpian.")
+        paragraph("Novedades de 1.0.2: las descargas se cancelan al instante, "
+                  "se reanudan sin empezar de cero y se verifican con SHA-1. "
+                  "Los servidores se pueden probar todos a la vez sin perder "
+                  "conexiones, la sesión de Microsoft se renueva aunque haya "
+                  "un corte de red y la skin opcional ya no impide iniciar el "
+                  "juego. Las instancias se exportan de forma segura, se "
+                  "validan al importar y los runtimes Java faltantes se "
+                  "instalan con confirmación.")
         paragraph("Blockys no distribuye Minecraft. Para jugar en servidores "
                   "premium necesitás una licencia oficial de Minecraft Java "
                   "Edition. No está afiliado a Mojang, Microsoft, Modrinth ni "

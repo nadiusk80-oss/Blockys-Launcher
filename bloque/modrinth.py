@@ -201,8 +201,16 @@ def instances_instance_dir(instance: dict) -> Path:
     return paths.INSTANCES_DIR / instance["id"]
 
 
+_HASH_CACHE: dict[str, tuple[int, int, str]] = {}
+
+
 def _file_sha1(path: Path) -> str:
     import hashlib
+    stat = path.stat()
+    key = str(path)
+    cached = _HASH_CACHE.get(key)
+    if cached and cached[0] == stat.st_size and cached[1] == stat.st_mtime_ns:
+        return cached[2]
     digest = hashlib.sha1()
     with open(path, "rb") as handle:
         while True:
@@ -210,7 +218,9 @@ def _file_sha1(path: Path) -> str:
             if not chunk:
                 break
             digest.update(chunk)
-    return digest.hexdigest()
+    value = digest.hexdigest()
+    _HASH_CACHE[key] = (stat.st_size, stat.st_mtime_ns, value)
+    return value
 
 
 def check_updates(instance: dict, project_type: str = "mod",
@@ -259,6 +269,7 @@ def check_updates(instance: dict, project_type: str = "mod",
     except net.ConnectionError_ as exc:
         raise ModrinthError(f"Sin conexion con Modrinth: {exc}") from exc
     updated: list[Path] = []
+    failed: list[str] = []
     for old_hash, version in (response or {}).items():
         old_path = local.get(old_hash)
         if old_path is None or not isinstance(version, dict):
@@ -289,7 +300,12 @@ def check_updates(instance: dict, project_type: str = "mod",
                     pass
             updated.append(dest)
         except (OSError, net.DownloadError):
+            failed.append(old_path.name)
             continue
+    if failed and on_status:
+        extra = f" y {len(failed) - 3} mas" if len(failed) > 3 else ""
+        on_status("No se pudieron actualizar: "
+                  + ", ".join(failed[:3]) + extra)
     return updated
 
 

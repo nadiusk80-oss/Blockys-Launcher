@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -82,29 +83,108 @@ def http_json(url: str, data: bytes | None = None, headers: dict | None = None,
 
 
 class _Progress:
-    def __init__(self, initial: int = 0):
-        self.value = initial
+    def __init__(self, total: int = 0, value: int = 0):
+        self.value = value
+        self.total = total
         self.lock = threading.Lock()
 
     def add(self, n: int) -> None:
         with self.lock:
             self.value += n
 
+    def grow(self, n: int) -> None:
+        with self.lock:
+            self.total += n
 
-def _fetch(task: Task, progress: _Progress, stop: threading.Event) -> None:
+    def rollback(self, value: int, total: int = 0) -> None:
+        with self.lock:
+            self.value -= value
+            self.total -= total
+
+
+class _BadPayload(DownloadError):
+    pass
+
+
+def _remove(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _fetch(task: Task, progress: _Progress, stop: threading.Event,
+           on_tick=None, cancel_event: threading.Event | None = None) -> None:
     dest = Path(task.dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
+    grow = task.size is None
     last_error: Exception | None = None
-    for attempt in range(1, 5):
+    for attempt in range(1, 6):
         if stop.is_set():
             raise Cancelled()
-        written = 0
+        if attempt > 1:
+            time.sleep(min(4.0, 0.6 * attempt) + random.uniform(0.0, 0.5))
+
+        offset = 0
+        try:
+            if tmp.is_file():
+                offset = tmp.stat().st_size
+        except OSError:
+            offset = 0
+        if task.size is not None:
+            if offset > task.size:
+                _remove(tmp)
+                offset = 0
+            elif offset == task.size and offset > 0:
+                if _matches_hashes(tmp, task):
+                    os.replace(tmp, dest)
+                    progress.add(offset)
+                    if on_tick:
+                        on_tick()
+                    return
+                _remove(tmp)
+                offset = 0
+        elif offset:
+            _remove(tmp)
+            offset = 0
+
         h1 = hashlib.sha1()
         h256 = hashlib.sha256()
+        if offset:
+            try:
+                with open(tmp, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(CHUNK), b""):
+                        h1.update(chunk)
+                        h256.update(chunk)
+            except OSError:
+                _remove(tmp)
+                offset = 0
+                h1 = hashlib.sha1()
+                h256 = hashlib.sha256()
+            else:
+                progress.add(offset)
+
+        written = offset
+        grown = offset if grow else 0
+        headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}
+        if offset:
+            headers["Range"] = f"bytes={offset}-"
+        resp = None
         try:
-            req = Request(task.url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"})
-            with urlopen(req, timeout=60) as resp, open(tmp, "wb") as out:
+            resp = urlopen(Request(task.url, headers=headers), timeout=60)
+            if offset and getattr(resp, "status", 200) != 206:
+                out = open(tmp, "wb")
+                progress.rollback(offset)
+                written = 0
+                if grow:
+                    progress.grow(-offset)
+                    grown = 0
+                h1 = hashlib.sha1()
+                h256 = hashlib.sha256()
+            else:
+                out = open(tmp, "ab" if offset else "wb")
+            try:
                 while True:
                     if stop.is_set():
                         raise Cancelled()
@@ -116,26 +196,53 @@ def _fetch(task: Task, progress: _Progress, stop: threading.Event) -> None:
                     h256.update(chunk)
                     written += len(chunk)
                     progress.add(len(chunk))
+                    if grow:
+                        progress.grow(len(chunk))
+                        grown += len(chunk)
+                    if on_tick:
+                        on_tick()
+            finally:
+                out.close()
             if task.size is not None and written != task.size:
-                raise OSError(f"tamano incorrecto ({written} != {task.size})")
+                if written < task.size:
+                    raise OSError(f"descarga incompleta ({written} de {task.size})")
+                raise _BadPayload(f"tamano incorrecto ({written} != {task.size})")
             if task.sha1 and h1.hexdigest() != task.sha1.lower():
-                raise OSError("SHA1 incorrecto")
+                raise _BadPayload("SHA1 incorrecto")
             if task.sha256 and h256.hexdigest() != task.sha256.lower():
-                raise OSError("SHA256 incorrecto")
+                raise _BadPayload("SHA256 incorrecto")
             os.replace(tmp, dest)
             return
         except Cancelled:
-            progress.add(-written)
+            progress.rollback(written, grown)
+            if cancel_event is not None and cancel_event.is_set():
+                _remove(tmp)
             raise
-        except Exception as exc:
-            progress.add(-written)
+        except HTTPError as exc:
+            progress.rollback(written, grown)
+            last_error = DownloadError(f"HTTP {exc.code} en {task.url}")
+            if exc.code == 416 and offset:
+                _remove(tmp)
+                continue
+            if exc.code in (408, 425, 429) or exc.code >= 500:
+                continue
+            _remove(tmp)
+            raise last_error from exc
+        except _BadPayload as exc:
+            progress.rollback(written, grown)
+            _remove(tmp)
             last_error = exc
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
-            if attempt < 4:
-                time.sleep(0.4 * attempt)
+            continue
+        except Exception as exc:
+            progress.rollback(written, grown)
+            last_error = exc
+            continue
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except OSError:
+                    pass
     raise DownloadError(f"{task.url}: {last_error}")
 
 
@@ -165,6 +272,7 @@ def download_many(tasks: list[Task], workers: int = 12,
         unique[str(task.dest)] = task
     pending: list[Task] = []
     known_total = 0
+    skipped_bytes = 0
     for task in unique.values():
         dest = Path(task.dest)
         skip = False
@@ -174,9 +282,10 @@ def download_many(tasks: list[Task], workers: int = 12,
                         or _matches_hashes(dest, task))
             else:
                 try:
-                    skip = dest.stat().st_size == task.size
+                    size_ok = dest.stat().st_size == task.size
                 except OSError:
-                    skip = False
+                    size_ok = False
+                skip = size_ok and _matches_hashes(dest, task)
                 if not skip:
                     try:
                         dest.unlink()
@@ -184,37 +293,44 @@ def download_many(tasks: list[Task], workers: int = 12,
                         pass
         if skip:
             try:
-                known_total += dest.stat().st_size
+                size = dest.stat().st_size
             except OSError:
                 skip = False
-            part = dest.with_name(dest.name + ".part")
-            if part.exists():
-                try:
-                    part.unlink()
-                except OSError:
-                    pass
+            else:
+                skipped_bytes += size
+                known_total += size
+            _remove(dest.with_name(dest.name + ".part"))
         if not skip:
             pending.append(task)
             known_total += task.size or 0
 
-    progress = _Progress(known_total - sum(t.size or 0 for t in pending))
-    total = known_total
+    progress = _Progress(known_total, skipped_bytes)
     done_files = 0
     lock = threading.Lock()
     stop = threading.Event()
+    last_report = [0.0]
 
-    def report() -> None:
-        if on_progress:
-            on_progress(progress.value, total, done_files, len(pending))
+    def report(force: bool = False) -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            stop.set()
+        if on_progress is None:
+            return
+        now = time.monotonic()
+        with lock:
+            if not force and now - last_report[0] < 0.15:
+                return
+            last_report[0] = now
+            done = done_files
+        on_progress(progress.value, progress.total, done, len(pending))
 
-    report()
+    report(force=True)
 
     def worker(task: Task) -> None:
         nonlocal done_files
-        _fetch(task, progress, stop)
+        _fetch(task, progress, stop, on_tick=report, cancel_event=cancel_event)
         with lock:
             done_files += 1
-        report()
+        report(force=True)
 
     errors: list[Exception] = []
     if pending:

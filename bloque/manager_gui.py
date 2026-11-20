@@ -1362,6 +1362,7 @@ class InstancesDialog(tk.Toplevel):
             label(scroll.content, "Minecraft los guarda en servers.dat.",
                   size=8, color=FAINT).pack(anchor="w")
             return
+        probes = []
         for index, entry in enumerate(entries):
             row = tk.Frame(scroll.content, bg=PANEL,
                            highlightbackground=BORDER_SOFT, highlightthickness=1)
@@ -1373,6 +1374,7 @@ class InstancesDialog(tk.Toplevel):
                 anchor="w", pady=(2, 0))
             status = label(info, "", size=8, color=FAINT)
             status.pack(anchor="w", pady=(2, 0))
+            probes.append((entry, status))
             Button(row, "Quitar", kind="danger",
                    command=lambda i=index: self._delete_server(i),
                    width=58, height=26, font=(FONT, 8)).pack(
@@ -1389,6 +1391,21 @@ class InstancesDialog(tk.Toplevel):
                    command=lambda addr=entry["ip"]: self._connect_server(addr),
                    width=74, height=26, font=(FONT, 8)).pack(
                 side="right", padx=(0, 4))
+        if len(probes) > 1:
+            Button(toolbar, "Probar todos", kind="quiet",
+                   command=lambda: self._ping_all(probes),
+                   width=94, height=28, font=(FONT, 8)).pack(
+                side="right", padx=(0, 6))
+
+    def _ping_all(self, probes: list) -> None:
+        for entry, status_widget in probes:
+            try:
+                if not status_widget.winfo_exists():
+                    continue
+            except tk.TclError:
+                continue
+            self._ping_server(entry, status_widget)
+        self._status(f"Comprobando {len(probes)} servidores...")
 
     def _open_servers_file(self) -> None:
         folder = self.store.game_dir(self._current)

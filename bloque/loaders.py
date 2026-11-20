@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -176,11 +177,16 @@ def _run_installer(installer: Path, java_exe: Path, label: str,
                 raise net.Cancelled()
             if time.time() > deadline:
                 process.kill()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
                 raise LoaderError("El instalador tardo demasiado (30 minutos)")
             time.sleep(0.4)
         if process.returncode != 0:
             tail = ""
             try:
+                log.flush()
                 text = log_path.read_text(encoding="utf-8", errors="replace")
                 tail = " ".join(line.strip() for line in text.splitlines()[-4:])
             except OSError:
@@ -222,13 +228,30 @@ def _find_installed(game: str, loader: str, loader_version: str) -> str | None:
     return best[1] if best else None
 
 
+def _valid_installer(path: Path) -> bool:
+    try:
+        return path.stat().st_size > 100_000 and zipfile.is_zipfile(path)
+    except OSError:
+        return False
+
+
 def _download_installer(url: str, name: str, on_status, cancel_event=None) -> Path:
     dest = paths.CACHE_DIR / name
-    if dest.is_file() and dest.stat().st_size > 100_000:
+    if _valid_installer(dest):
         return dest
+    try:
+        dest.unlink()
+    except OSError:
+        pass
     if on_status:
         on_status(f"Descargando {name}...")
     net.download_one(url, dest, cancel_event=cancel_event)
+    if not _valid_installer(dest):
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        raise LoaderError(f"El instalador de {name} no es un JAR valido")
     return dest
 
 

@@ -420,6 +420,7 @@ def ping(address: str, timeout: float = 3.5) -> dict:
         raise ServerError("El servidor no respondió a tiempo") from exc
     except OSError as exc:
         raise ServerError(f"No se pudo conectar: {exc}") from exc
+    stream = None
     try:
         sock.settimeout(timeout)
         stream = sock.makefile("rb")
@@ -453,6 +454,11 @@ def ping(address: str, timeout: float = 3.5) -> dict:
     except (OSError, ValueError) as exc:
         raise ServerError(f"Respuesta del servidor inválida: {exc}") from exc
     finally:
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
         try:
             sock.close()
         except OSError:

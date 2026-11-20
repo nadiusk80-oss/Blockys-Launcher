@@ -1246,9 +1246,20 @@ class SettingsDialog(tk.Toplevel):
     def _install_missing(self) -> None:
         if self._installing:
             return
+        majors = [major for major in java.JAVA_MAJORS
+                  if not java.installed_runtime(major)]
+        if not majors:
+            self.status_var.set("Todos los runtimes ya están instalados")
+            return
+        if not ask_confirm(
+                self, "Instalar Java Temurin",
+                "Se instalarán los runtimes que faltan: "
+                + ", ".join(str(major) for major in majors)
+                + ".\n\nPuede tardar varios minutos y ocupar cientos de MB.",
+                ok_text="Instalar", danger=False):
+            return
         self._installing = True
         self.install_btn.configure(state="disabled")
-        majors = list(java.JAVA_MAJORS)
         self.progress["maximum"] = len(majors) * 100
         self.progress["value"] = 0
         self.status_var.set("Comprobando runtimes...")

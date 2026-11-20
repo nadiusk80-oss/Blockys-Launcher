@@ -16,13 +16,19 @@ def load_json(path: Path, default):
         return default
 
 
-def save_json(path: Path, data) -> None:
+def save_json(path: Path, data, backup: bool = True) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, ensure_ascii=False)
+        if backup:
+            try:
+                if path.is_file() and path.stat().st_size:
+                    shutil.copy2(path, path.with_name(path.name + ".bak"))
+            except OSError:
+                pass
         os.replace(tmp, path)
     except Exception:
         try:
