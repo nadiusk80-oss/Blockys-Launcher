@@ -21,16 +21,16 @@ The combined installer automatically installs:
 
 Release artifacts are built from the source in this repository by GitHub Actions and are signed through SignPath Foundation. Every signing request requires manual approval by a maintainer.
 
-## What's new in 1.0.2
+## What's new in 1.0.3
 
-- Downloads cancel instantly, resume from a partial file and are verified against their SHA-1.
-- Existing files are re-checked against their hashes before being reused.
-- All saved servers can be tested at once from the instance tab.
-- Microsoft session refresh survives temporary network failures.
-- The optional local skin copy can no longer block game start.
-- Instance exports are written atomically and imported packages are validated.
-- Missing Java runtimes are installed only after confirmation.
-- Settings, accounts and instances are saved with a `.bak` backup.
+- Launch arguments with spaces or quotes no longer break the game command.
+- Quick Play uses a real `logs/quickplay.log` path and the logs folder is created on demand.
+- Microsoft refresh tokens are saved immediately after each rotation.
+- Instances detect mods with any capitalization, export without personal paths and no longer leave ghost tiles in the manager.
+- `servers.dat` survives corrupted entries without shifting indexes.
+- Modrinth re-enables disabled mods and rejects projects for unsupported loaders.
+- Installed libraries and client jars are verified before a version is marked ready.
+- The settings window no longer blocks mouse wheel scrolling, and background errors no longer close the app.
 
 To verify a signed release on Windows:
 
@@ -199,8 +199,8 @@ versions that require Java 25 (26.3 and 26.4-snapshot) run without extra setup. 
 changes the app name, icons, logo, accent color and package id (`com.blockys.movil`), and uses
 its own build workflow. The modified source, the attribution notices and the list of changes are
 published in [nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil), and
-the APK is available in its Releases section (`Blockys-Mobile-2.0.0.apk`).
+the APK is available in its Releases section (`Blockys-Mobile-2.0.4.apk`).
 
 ## Legal notice
 
-Blockys is not affiliated with Mojang, Microsoft, Modrinth, Prism Launcher, PojavLauncherTeam or AngelAuraMC. Minecraft is a trademark of Mojang Studios.
+Blockys is not affiliated with Mojang, Microsoft, Modrinth, Prism Launcher or PojavLauncherTeam. Minecraft is a trademark of Mojang Studios.
