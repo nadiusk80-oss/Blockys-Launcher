@@ -201,6 +201,24 @@ its own build workflow. The modified source, the attribution notices and the lis
 published in [nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil), and
 the APK is available in its Releases section (`Blockys-Mobile-2.0.4.apk`).
 
+## Blockys iOS (iPhone and iPad)
+
+Blockys iOS is the iOS counterpart of Blockys Mobile: an unofficial fork of
+[Amethyst-iOS](https://github.com/AngelAuraMC/Amethyst-iOS) by AngelAuraMC, which is itself
+based on PojavLauncher and Boardwalk. It is distributed under the GNU General Public License
+v3.0 (GPL-3.0). The fork changes the app name, icons, logo, interface strings, package id
+(`com.blockys.ios`) and uses its own build workflow.
+
+It runs Minecraft: Java Edition on iOS 14 to 18 with the Java 8, 17, 21 and 25 runtimes
+included, and supports Forge, Fabric, NeoForge, Quilt and OptiFine profiles. JIT is required
+(TrollStore or a JIT enabler such as AltStore, SideStore or StikDebug), and iOS 26 or later is
+not supported because Apple removed the JIT paths the launcher relies on. The IPA is built by
+GitHub Actions on a macOS runner and published as `Blockys-iOS-1.0.1.ipa` (unsigned) and
+`Blockys-iOS-1.0.1-trollstore.tipa` in
+[nadiusk80-oss/Blockys-iOS](https://github.com/nadiusk80-oss/Blockys-iOS), together with the
+full modified source and the notice file.
+
 ## Legal notice
 
-Blockys is not affiliated with Mojang, Microsoft, Modrinth, Prism Launcher or PojavLauncherTeam. Minecraft is a trademark of Mojang Studios.
+Blockys is not affiliated with Mojang, Microsoft, Modrinth, Prism Launcher, PojavLauncherTeam,
+AngelAuraMC or Boardwalk. Minecraft is a trademark of Mojang Studios.
