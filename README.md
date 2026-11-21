@@ -186,9 +186,9 @@ Report security vulnerabilities through GitHub private vulnerability reporting. 
 
 Blockys is distributed under the terms of the [LICENSE](LICENSE) file.
 
-## Blockys Móvil (Android)
+## Blockys Mobile (Android)
 
-Blockys Móvil is a separate project for Android: an unofficial fork of
+Blockys Mobile is a separate project for Android: an unofficial fork of
 [Amethyst-Android](https://github.com/AngelAuraMC/Amethyst-Android) by AngelAuraMC, which is
 itself a fork of [PojavLauncher](https://github.com/PojavLauncherTeam/PojavLauncher) by
 PojavLauncherTeam and Boardwalk. It is distributed under the GNU Lesser General Public License
@@ -199,7 +199,7 @@ versions that require Java 25 (26.3 and 26.4-snapshot) run without extra setup. 
 changes the app name, icons, logo, accent color and package id (`com.blockys.movil`), and uses
 its own build workflow. The modified source, the attribution notices and the list of changes are
 published in [nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil), and
-the APK is available in its Releases section (`Blockys-Movil-2.0.0.apk`).
+the APK is available in its Releases section (`Blockys-Mobile-2.0.0.apk`).
 
 ## Legal notice
 
