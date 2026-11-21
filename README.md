@@ -189,12 +189,18 @@ Blockys is distributed under the terms of the [LICENSE](LICENSE) file.
 ## Blockys Móvil (Android)
 
 Blockys Móvil is a separate project for Android: an unofficial fork of
-[PojavLauncher](https://github.com/PojavLauncherTeam/PojavLauncher) by PojavLauncherTeam and
-contributors, distributed under the GNU Lesser General Public License v3.0 (LGPL-3.0). The fork
-only changes the app name, icons, logo and accent color, and uses its own build workflow. The
-modified source, the attribution notices and the list of changes are published in
-[nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil).
+[Amethyst-Android](https://github.com/AngelAuraMC/Amethyst-Android) by AngelAuraMC, which is
+itself a fork of [PojavLauncher](https://github.com/PojavLauncherTeam/PojavLauncher) by
+PojavLauncherTeam and Boardwalk. It is distributed under the GNU Lesser General Public License
+v3.0 (LGPL-3.0).
+
+It bundles Java 8 inside the APK and installs Java 17, 21 or 25 on demand, so recent Minecraft
+versions that require Java 25 (26.3 and 26.4-snapshot) run without extra setup. The fork only
+changes the app name, icons, logo, accent color and package id (`com.blockys.movil`), and uses
+its own build workflow. The modified source, the attribution notices and the list of changes are
+published in [nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil), and
+the APK is available in its Releases section (`Blockys-Movil-2.0.0.apk`).
 
 ## Legal notice
 
-Blockys is not affiliated with Mojang, Microsoft, Modrinth, Prism Launcher or PojavLauncherTeam. Minecraft is a trademark of Mojang Studios.
+Blockys is not affiliated with Mojang, Microsoft, Modrinth, Prism Launcher, PojavLauncherTeam or AngelAuraMC. Minecraft is a trademark of Mojang Studios.
