@@ -35,7 +35,7 @@ class AuthError(Exception):
 
 
 def offline_uuid(name: str) -> str:
-    digest = bytearray(hashlib.md5(f"OfflinePlayer:{name}".encode("utf-8")).digest())
+    digest = bytearray(hashlib.md5(f"OfflinePlayer:{name}".encode()).digest())
     digest[6] = (digest[6] & 0x0F) | 0x30
     digest[8] = (digest[8] & 0x3F) | 0x80
     return str(uuidlib.UUID(bytes=bytes(digest)))
@@ -202,7 +202,7 @@ class MicrosoftAuth:
             "xuid": xuid,
         }
 
-    def refresh(self, refresh_token: str) -> dict:
+    def refresh(self, refresh_token: str, on_token=None) -> dict:
         body = urlencode({
             "grant_type": "refresh_token",
             "client_id": self.client_id,
@@ -242,8 +242,14 @@ class MicrosoftAuth:
                 ) from exc
         if not isinstance(tokens, dict) or not tokens.get("access_token"):
             raise AuthError("Microsoft no devolvio un token valido. Intenta de nuevo.")
+        rotated = str(tokens.get("refresh_token") or refresh_token)
+        if on_token:
+            try:
+                on_token(rotated)
+            except Exception:
+                pass
         result = self.login_with_ms_token(tokens.get("access_token", ""))
-        result["refresh_token"] = tokens.get("refresh_token", refresh_token)
+        result["refresh_token"] = rotated
         return result
 
 
@@ -258,7 +264,7 @@ def microsoft_login(client_id: str, cancel_event=None, on_status=None, on_code=N
     return result
 
 
-def ensure_access_token(profile: dict, client_id: str) -> dict:
+def ensure_access_token(profile: dict, client_id: str, on_token=None) -> dict:
     if profile.get("type") != "microsoft":
         return profile
     if profile.get("access_token") and time.time() < float(profile.get("expires_at") or 0):
@@ -266,7 +272,13 @@ def ensure_access_token(profile: dict, client_id: str) -> dict:
     refresh_token = profile.get("refresh_token")
     if not refresh_token:
         raise AuthError("Vuelve a iniciar sesion con Microsoft")
-    result = MicrosoftAuth(client_id).refresh(refresh_token)
+
+    def persist(token: str) -> None:
+        profile["refresh_token"] = token
+        if on_token:
+            on_token(profile)
+
+    result = MicrosoftAuth(client_id).refresh(refresh_token, on_token=persist)
     profile.update(result)
     return profile
 
@@ -333,7 +345,8 @@ class ProfileStore:
             "type": "microsoft",
             "name": auth_data["name"],
             "access_token": auth_data.get("access_token", ""),
-            "refresh_token": auth_data.get("refresh_token", profile.get("refresh_token", "")),
+            "refresh_token": (auth_data.get("refresh_token")
+                              or profile.get("refresh_token", "")),
             "expires_at": auth_data.get("expires_at", 0),
             "xuid": auth_data.get("xuid", profile.get("xuid", "")),
         })

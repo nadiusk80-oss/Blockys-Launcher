@@ -10,7 +10,6 @@ import time
 import zlib
 from pathlib import Path
 
-
 BYTE_KEYS = {"hidden", "acceptTextures"}
 STATUS_PROTOCOL = 767
 
@@ -101,6 +100,8 @@ class _Reader:
 
 def _write_string(value: str) -> bytes:
     raw = value.encode("utf-8")
+    if len(raw) > 0xFFFF:
+        raise ServerError("Un texto de la lista de servidores es demasiado largo")
     return struct.pack(">H", len(raw)) + raw
 
 
@@ -109,7 +110,7 @@ def _write_payload(value, tag: int | None = None) -> bytes:
         if isinstance(value, bool):
             tag = 1
         elif isinstance(value, int):
-            tag = 3 if not -2**31 <= value < 2**31 else 4
+            tag = 3 if -2**31 <= value < 2**31 else 4
         elif isinstance(value, float):
             tag = 6
         elif isinstance(value, str):
@@ -209,6 +210,10 @@ def _load_file(path: Path) -> dict:
     entries = root.get("servers")
     if not isinstance(entries, list):
         root["servers"] = []
+    else:
+        # Los indices de la interfaz deben coincidir con los del archivo.
+        root["servers"] = [entry for entry in entries
+                           if isinstance(entry, dict)]
     return root
 
 
@@ -259,7 +264,7 @@ def _save(path: Path, root: dict) -> None:
                 _write_backup(path)
         tmp.write_bytes(gzip.compress(body, mtime=0))
         tmp.replace(path)
-    except OSError as exc:
+    except (OSError, struct.error) as exc:
         try:
             tmp.unlink()
         except OSError:
@@ -416,7 +421,7 @@ def ping(address: str, timeout: float = 3.5) -> dict:
         sock = socket.create_connection((host, port), timeout=timeout)
     except socket.gaierror as exc:
         raise ServerError("No se pudo resolver el nombre del servidor") from exc
-    except socket.timeout as exc:
+    except TimeoutError as exc:
         raise ServerError("El servidor no respondió a tiempo") from exc
     except OSError as exc:
         raise ServerError(f"No se pudo conectar: {exc}") from exc

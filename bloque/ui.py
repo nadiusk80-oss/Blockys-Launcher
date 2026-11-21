@@ -3,11 +3,10 @@ from __future__ import annotations
 import ctypes
 import queue
 import threading
-from functools import lru_cache
-from pathlib import Path
-
 import tkinter as tk
 import tkinter.font as tkfont
+from functools import lru_cache
+from pathlib import Path
 from tkinter import filedialog
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -1072,7 +1071,7 @@ class SettingsDialog(tk.Toplevel):
         self._build()
         self._refresh_java_status()
         self._poll_job = self.after(100, self._poll)
-        self.bind_all("<MouseWheel>", self._on_wheel)
+        self.bind("<MouseWheel>", self._on_wheel)
         set_app_icon(self)
         self.after(80, lambda: enable_dark_titlebar(self))
 
@@ -1080,8 +1079,10 @@ class SettingsDialog(tk.Toplevel):
         self._scroll.scroll(event)
 
     def destroy(self) -> None:
+        if getattr(self.app, "_settings_window", None) is self:
+            self.app._settings_window = None
         try:
-            self.unbind_all("<MouseWheel>")
+            self.grab_release()
         except tk.TclError:
             pass
         if self._poll_job is not None:

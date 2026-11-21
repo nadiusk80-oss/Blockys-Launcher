@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 import subprocess
 import sys
 import time
@@ -35,18 +34,26 @@ def _substitute(text: str, subs: dict) -> str:
 
 
 def _split_args(text: str) -> list[str]:
-    text = (text or "").strip()
-    if not text:
-        return []
-    try:
-        parts = shlex.split(text, posix=False)
-    except ValueError:
-        return text.split()
-    result = []
-    for part in parts:
-        if len(part) > 1 and part[0] == part[-1] and part[0] in ("'", '"'):
-            part = part[1:-1]
-        result.append(part)
+    """Divide argumentos respetando comillas en cualquier posicion."""
+    result: list[str] = []
+    buffer: list[str] = []
+    quote = None
+    for char in str(text or ""):
+        if quote:
+            if char == quote:
+                quote = None
+            else:
+                buffer.append(char)
+        elif char in ("'", '"'):
+            quote = char
+        elif char.isspace():
+            if buffer:
+                result.append("".join(buffer))
+                buffer = []
+        else:
+            buffer.append(char)
+    if buffer:
+        result.append("".join(buffer))
     return result
 
 
@@ -112,6 +119,7 @@ def build_command(plan: InstallPlan, profile: dict, settings: dict,
     uuid_hex = (profile.get("uuid") or "").replace("-", "")
     game_dir = Path(settings["game_dir"])
     game_dir.mkdir(parents=True, exist_ok=True)
+    (game_dir / "logs").mkdir(parents=True, exist_ok=True)
     features = default_features(settings)
     quick_type = settings.get("quick_play_type", "none")
     quick_target = str(settings.get("quick_play_target") or "").strip()
@@ -144,6 +152,7 @@ def build_command(plan: InstallPlan, profile: dict, settings: dict,
         "quickPlaySingleplayer": quick_target if quick_type == "world" else "",
         "quickPlayMultiplayer": quick_target if quick_type == "server" else "",
         "quickPlayRealms": quick_target if quick_type == "realms" else "",
+        "quickPlayPath": str(game_dir / "logs" / "quickplay.log"),
     }
 
     arguments = plan.data.get("arguments")

@@ -6,20 +6,49 @@ import shutil
 import sys
 import threading
 import time
+import tkinter as tk
 import traceback
 import webbrowser
-import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
 
 from PIL import Image, ImageTk
 
-from . import (APP_TITLE, __version__, accounts, diagnostics, instances,
-               launch, loaders, net, paths, skins, ui, updates, versions)
+from . import (
+    APP_TITLE,
+    __version__,
+    accounts,
+    diagnostics,
+    instances,
+    launch,
+    loaders,
+    net,
+    paths,
+    skins,
+    ui,
+    updates,
+    versions,
+)
 from .accounts import AuthError, ProfileStore
-from .ui import (ACCENT, ACCENT_INK, BG, BORDER, BORDER_SOFT, CARD, DANGER,
-                 DISPLAY, FAINT, FONT, GRASS, LOG_BG, MONO, MUTED, PANEL, TEXT,
-                 WARN)
+from .ui import (
+    ACCENT,
+    ACCENT_INK,
+    BG,
+    BORDER,
+    BORDER_SOFT,
+    CARD,
+    DANGER,
+    DISPLAY,
+    FAINT,
+    FONT,
+    GRASS,
+    LOG_BG,
+    MONO,
+    MUTED,
+    PANEL,
+    TEXT,
+    WARN,
+)
 
 CATEGORY_ORDER = ("all", "release", "snapshot", "old_beta", "old_alpha")
 CATEGORY_SHORT = {"all": "Todas", "release": "Lanzamientos",
@@ -52,6 +81,7 @@ class LauncherApp(tk.Tk):
         self._stage_photo = None
         self._busy = False
         self._loading_versions = False
+        self._pending_force_reload = False
         self._game = None
         self._game_log = None
         self._auth_cancel: threading.Event | None = None
@@ -63,6 +93,8 @@ class LauncherApp(tk.Tk):
         self._accounts_window: tk.Toplevel | None = None
         self._help_window: tk.Toplevel | None = None
         self._welcome_window: tk.Toplevel | None = None
+        self._settings_window: tk.Toplevel | None = None
+        self._settings_job = None
         self._crash_reported = False
         self._grid_cols = 0
         self._grid_signature = None
@@ -95,6 +127,8 @@ class LauncherApp(tk.Tk):
         self.after(120, lambda: ui.enable_dark_titlebar(self))
         self._pump_job = None
         self._build()
+        for var in (self.width_var, self.height_var, self.game_dir_var):
+            var.trace_add("write", lambda *_args: self._queue_settings_save())
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._pump_job = self.after(80, self._pump)
         self.bind("<F5>", lambda _event: self._load_versions(force=True))
@@ -294,7 +328,7 @@ class LauncherApp(tk.Tk):
 
         row = tk.Frame(inner, bg=PANEL)
         row.pack(fill="x")
-        ui.Button(row, "+ Offline", command=self._add_offline, height=34).pack(
+        ui.Button(row, "Cuenta local", command=self._add_offline, height=34).pack(
             side="left", fill="x", expand=True)
         ui.Button(row, "Microsoft", command=self._microsoft_login,
                   height=34).pack(side="left", fill="x", expand=True,
@@ -521,6 +555,10 @@ class LauncherApp(tk.Tk):
             self._log(f"{len(self.manifest.get('versions', []))} versiones disponibles", "dim")
         elif kind == "versions_loaded":
             self._loading_versions = False
+            if self._pending_force_reload:
+                self._pending_force_reload = False
+                self.status_var.set("Actualizando versiones...")
+                self._load_versions(force=True)
         elif kind == "versions_error":
             self._loading_versions = False
             self.version_info.configure(
@@ -649,6 +687,12 @@ class LauncherApp(tk.Tk):
                 self._log(payload["detail"].strip().splitlines()[-1], "dim")
             self._show_log()
             ui.show_error(self, "No se pudo iniciar Minecraft", payload["msg"])
+        elif kind == "diagnostics_ready":
+            self._diagnostics_ready(Path(payload["path"]))
+        elif kind == "diagnostics_failed":
+            self._diagnostics_failed(payload["msg"])
+        elif kind == "log_issues":
+            self._show_log_issues(payload.get("issues") or [])
 
     def _handle_unexpected_error(self, info, context: str = "") -> None:
         path = diagnostics.record_crash(*info, context=context)
@@ -1103,6 +1147,10 @@ class LauncherApp(tk.Tk):
             self._apply_instance(instance)
         self._play()
 
+    def _set_instance_actions(self, state: str) -> None:
+        for button in getattr(self, "_instance_actions", []):
+            button.configure(state=state)
+
     def _update_instance_sidebar(self) -> None:
         instance = self._instance
         if instance is None:
@@ -1218,6 +1266,7 @@ class LauncherApp(tk.Tk):
             return
         target = Path(chosen)
         self._busy = True
+        self._set_instance_actions("disabled")
         self.play_btn.configure(state="disabled", text="EXPORTANDO...")
         self.status_var.set("Exportando instancia...")
         self._log(f"Exportando instancia a {chosen}...", "dim")
@@ -1245,6 +1294,7 @@ class LauncherApp(tk.Tk):
             return
         instance_id = instance["id"]
         self._busy = True
+        self._set_instance_actions("disabled")
         self.play_btn.configure(state="disabled", text="COPIANDO...")
         self.status_var.set("Copiando instancia...")
         self._log(f"Copiando instancia {instance.get('name')}...", "dim")
@@ -1314,7 +1364,7 @@ class LauncherApp(tk.Tk):
             except Exception:
                 return
             if issues:
-                self.after(0, lambda: self._show_log_issues(issues))
+                self._post("log_issues", issues=issues)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -1359,19 +1409,20 @@ class LauncherApp(tk.Tk):
                     Path(chosen), self.settings, self.instance_store,
                     self.manifest)
             except Exception as exc:
-                self.after(0, lambda: self._diagnostics_failed(exc))
+                message = str(exc) or type(exc).__name__
+                self._post("diagnostics_failed", msg=message)
             else:
-                self.after(0, lambda: self._diagnostics_ready(path))
+                self._post("diagnostics_ready", path=str(path))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _diagnostics_failed(self, exc: Exception) -> None:
+    def _diagnostics_failed(self, message: str) -> None:
         if not self.winfo_exists():
             return
         self.status_var.set("No se pudo exportar el diagnóstico")
-        self._log(f"No se pudo exportar el diagnóstico: {exc}", "err")
+        self._log(f"No se pudo exportar el diagnóstico: {message}", "err")
         ui.show_error(self, "Diagnóstico",
-                      f"No se pudo crear el archivo:\n{exc}")
+                      f"No se pudo crear el archivo:\n{message}")
 
     def _diagnostics_ready(self, path: Path) -> None:
         if not self.winfo_exists():
@@ -1406,6 +1457,7 @@ class LauncherApp(tk.Tk):
 
     def _toolbar_update(self) -> None:
         if self._loading_versions:
+            self._pending_force_reload = True
             return
         self.status_var.set("Actualizando versiones...")
         self._log("Actualizando manifiesto de Mojang...", "dim")
@@ -1413,7 +1465,13 @@ class LauncherApp(tk.Tk):
         self._refresh_instances()
 
     def _open_settings(self) -> None:
-        ui.SettingsDialog(self)
+        window = self._settings_window
+        if window is not None and window.winfo_exists():
+            window.deiconify()
+            window.lift()
+            window.focus_set()
+            return
+        self._settings_window = ui.SettingsDialog(self)
 
     def apply_settings(self, settings: dict) -> None:
         settings = dict(settings)
@@ -1445,7 +1503,7 @@ class LauncherApp(tk.Tk):
         self._toggle_resolution()
         self._log("Ajustes guardados", "dim")
 
-    def _collect_settings(self) -> dict:
+    def _collect_settings(self, quick_override=None) -> dict:
         settings = dict(self.settings)
         settings["memory_mb"] = int(self.memory_var.get())
         settings["custom_resolution"] = bool(self.resolution_var.get())
@@ -1476,9 +1534,10 @@ class LauncherApp(tk.Tk):
             for key in ("jvm_args", "game_args", "env_vars", "pre_launch",
                         "post_exit", "quick_play_type", "quick_play_target"):
                 settings[key] = instance.get(key, "")
-            if self._quick_play_override:
+            override = quick_override or self._quick_play_override
+            if override:
                 settings["quick_play_type"], settings["quick_play_target"] = (
-                    self._quick_play_override)
+                    override)
             return settings
         settings["game_dir"] = (self.game_dir_var.get().strip()
                                 or str(paths.default_game_dir()))
@@ -1496,11 +1555,40 @@ class LauncherApp(tk.Tk):
             return
         self.memory_var.set(value)
         self.memory_label.configure(text=f"{value} MB")
+        self._queue_settings_save()
 
     def _toggle_resolution(self) -> None:
         state = "normal" if self.resolution_var.get() else "disabled"
         self.width_entry.configure(state=state)
         self.height_entry.configure(state=state)
+        self._queue_settings_save()
+
+    def _queue_settings_save(self) -> None:
+        if self._settings_job is not None:
+            try:
+                self.after_cancel(self._settings_job)
+            except tk.TclError:
+                pass
+        self._settings_job = self.after(600, self._persist_ui_settings)
+
+    def _persist_ui_settings(self) -> None:
+        self._settings_job = None
+        if self._instance:
+            return
+        settings = dict(self.settings)
+        settings["memory_mb"] = int(self.memory_var.get())
+        settings["custom_resolution"] = bool(self.resolution_var.get())
+        settings["resolution_width"] = max(
+            320, _int_value(self.width_var.get(), 1280))
+        settings["resolution_height"] = max(
+            240, _int_value(self.height_var.get(), 720))
+        settings["game_dir"] = (self.game_dir_var.get().strip()
+                                or str(paths.default_game_dir()))
+        self.settings = settings
+        try:
+            paths.save_settings(settings)
+        except OSError as exc:
+            self._log(f"No se pudieron guardar los ajustes: {exc}", "err")
 
     def _open_game_dir(self) -> None:
         folder = Path(self.game_dir_var.get() or self.settings.get("game_dir", ""))
@@ -1815,14 +1903,14 @@ class LauncherApp(tk.Tk):
 
     def _add_offline(self) -> None:
         name = ui.ask_text(
-            self, "Cuenta offline",
+            self, "Cuenta local",
             "Nombre de jugador (3-16 letras, números o _):")
         if not name:
             return
         try:
             profile = self.store.add_offline(name)
         except ValueError as exc:
-            ui.show_error(self, "Cuenta offline", str(exc))
+            ui.show_error(self, "Cuenta local", str(exc))
             return
         self._refresh_accounts()
         self._log(f"Cuenta offline creada: {profile['name']}", "ok")
@@ -1856,7 +1944,7 @@ class LauncherApp(tk.Tk):
             self.skin_name.configure(text=profile.get("name", ""))
             is_ms = profile.get("type") == "microsoft"
             self.skin_kind.configure(text="Cuenta Microsoft" if is_ms
-                                     else "Cuenta offline")
+                                     else "Cuenta local")
             self.variant_var.set("Slim" if profile.get("skin_variant") == "slim"
                                  else "Clásica")
             self.import_btn.configure(state="normal")
@@ -1869,7 +1957,7 @@ class LauncherApp(tk.Tk):
             self.skin_name.configure(text="Sin cuenta")
             self.skin_kind.configure(text="")
             self.skin_hint.configure(
-                text="Crea una cuenta offline o inicia sesión con Microsoft.")
+                text="Crea una cuenta local o inicia sesión con Microsoft.")
             for button in (self.import_btn, self.remove_btn, self.upload_btn,
                            self.delete_btn):
                 button.configure(state="disabled")
@@ -1967,8 +2055,9 @@ class LauncherApp(tk.Tk):
 
         def work():
             try:
-                accounts.ensure_access_token(profile,
-                                             self.settings.get("client_id", ""))
+                accounts.ensure_access_token(
+                    profile, self.settings.get("client_id", ""),
+                    on_token=lambda _profile: self.store.save())
                 self.store.save()
                 skins.upload_skin(profile, variant)
             except (AuthError, skins.SkinError) as exc:
@@ -1988,7 +2077,7 @@ class LauncherApp(tk.Tk):
                     self, "Cuenta Microsoft",
                     "Para iniciar sesión con Microsoft necesitas un Client ID de "
                     "Azure configurado en Ajustes.\n\n"
-                    "Las cuentas offline funcionan sin configurar nada.\n\n"
+                    "Las cuentas locales funcionan sin configurar nada.\n\n"
                     "¿Abrir Ajustes ahora?", ok_text="Abrir Ajustes",
                     danger=False):
                 self._open_settings()
@@ -2086,12 +2175,13 @@ class LauncherApp(tk.Tk):
         self._auth_status = None
 
     def _play(self) -> None:
+        override, self._quick_play_override = self._quick_play_override, None
         if self._busy or self._game is not None:
             return
         profile = self.store.selected()
         if not profile:
             ui.show_warning(self, "Cuenta",
-                            "Crea una cuenta offline o inicia sesión.")
+                            "Crea una cuenta local o inicia sesión.")
             return
         instance = self._instance
         if instance is not None:
@@ -2109,8 +2199,7 @@ class LauncherApp(tk.Tk):
                 ui.show_warning(self, "Versión",
                                 "Selecciona una versión de Minecraft.")
                 return
-        settings = self._collect_settings()
-        self._quick_play_override = None
+        settings = self._collect_settings(override)
         folder = Path(settings["game_dir"])
         if folder.exists() and not folder.is_dir():
             ui.show_error(self, "Carpeta del juego",
@@ -2133,7 +2222,9 @@ class LauncherApp(tk.Tk):
         try:
             if profile.get("type") == "microsoft":
                 self._post("status", text="Comprobando sesión de Microsoft...")
-                accounts.ensure_access_token(profile, settings.get("client_id", ""))
+                accounts.ensure_access_token(
+                    profile, settings.get("client_id", ""),
+                    on_token=lambda _profile: self.store.save())
                 self.store.save()
                 self._post("profiles")
             self._post("status", text="Leyendo versión...")
@@ -2235,6 +2326,8 @@ class LauncherApp(tk.Tk):
                 for line in output.splitlines()[-4:]:
                     self._post("log", text=line, tag="dim")
 
+            if self._cancel.is_set():
+                raise net.Cancelled()
             self._post("progress", frac=0.98, text="Iniciando Minecraft...")
             process, log_path, handle = launch.start_game(plan, profile, settings,
                                                           java_exe)
@@ -2294,6 +2387,16 @@ class LauncherApp(tk.Tk):
             try:
                 self._cancel.set()
             except AttributeError:
+                pass
+        if self._settings_job is not None:
+            try:
+                self.after_cancel(self._settings_job)
+            except tk.TclError:
+                pass
+            self._settings_job = None
+            try:
+                self._persist_ui_settings()
+            except (OSError, tk.TclError, ValueError):
                 pass
         if self._pump_job is not None:
             try:
@@ -2417,14 +2520,15 @@ class HelpDialog(tk.Toplevel):
 
         ui.divider(content, top=18, bottom=14)
         ui.section(content, "Información").pack(fill="x")
-        paragraph("Novedades de 1.0.2: las descargas se cancelan al instante, "
-                  "se reanudan sin empezar de cero y se verifican con SHA-1. "
-                  "Los servidores se pueden probar todos a la vez sin perder "
-                  "conexiones, la sesión de Microsoft se renueva aunque haya "
-                  "un corte de red y la skin opcional ya no impide iniciar el "
-                  "juego. Las instancias se exportan de forma segura, se "
-                  "validan al importar y los runtimes Java faltantes se "
-                  "instalan con confirmación.")
+        paragraph("Novedades de 1.0.3: los argumentos de lanzamiento con "
+                  "espacios o comillas ya no rompen el arranque y el quick play "
+                  "usa su archivo real. La sesión de Microsoft guarda el token "
+                  "renovado al instante, las instancias detectan mods con "
+                  "cualquier mayúscula, se exportan sin rutas personales y el "
+                  "gestor ya no deja instancias fantasma. servers.dat tolera "
+                  "archivos dañados, Modrinth reactiva mods deshabilitados y "
+                  "la instalación verifica bibliotecas y clientes antes de dar "
+                  "una versión por lista.")
         paragraph("Blockys no distribuye Minecraft. Para jugar en servidores "
                   "premium necesitás una licencia oficial de Minecraft Java "
                   "Edition. No está afiliado a Mojang, Microsoft, Modrinth ni "

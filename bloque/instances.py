@@ -76,8 +76,10 @@ def _sanitize_import(instance: dict) -> None:
         instance["quick_play_type"] = "none"
     instance["quick_play_target"] = _as_text(instance.get("quick_play_target"), 200)
     for key in ("java_path", "jvm_args", "game_args", "env_vars", "pre_launch",
-                "post_exit", "group", "notes", "icon", "loader_version"):
+                "post_exit", "group", "notes", "loader_version"):
         instance[key] = _as_text(instance.get(key))
+    icon = _as_text(instance.get("icon"), 16)
+    instance["icon"] = icon if icon in ICON_COLORS else ICON_COLORS[0]
 
 
 def _default_instance(store: list[dict], name: str, version: str,
@@ -145,7 +147,8 @@ class InstanceStore:
         instance.setdefault("java_mode", "inherit")
         instance.setdefault("java_path", "")
         instance.setdefault("aikar_flags", True)
-        instance.setdefault("icon", ICON_COLORS[0])
+        if instance.get("icon") not in ICON_COLORS:
+            instance["icon"] = ICON_COLORS[0]
         instance.setdefault("icon_path", "")
         instance.setdefault("group", "")
         instance.setdefault("notes", "")
@@ -299,10 +302,10 @@ class InstanceStore:
         for path in files:
             if not path.is_file():
                 continue
-            enabled = path.name.endswith(".jar") or path.name.endswith(".jar.disabled")
-            if not enabled:
+            lowered = path.name.lower()
+            if not lowered.endswith((".jar", ".jar.disabled")):
                 continue
-            disabled = path.name.endswith(MOD_SUFFIX)
+            disabled = lowered.endswith(MOD_SUFFIX)
             name = path.name[:-len(MOD_SUFFIX)] if disabled else path.name
             entries.append({"path": path, "name": name, "enabled": not disabled,
                             "size": path.stat().st_size})
@@ -405,6 +408,10 @@ class InstanceStore:
         part = dest.with_name(dest.name + ".part")
         payload = {key: value for key, value in instance.items()
                    if key not in ("resolved_version",)}
+        # Evita filtrar rutas personales y restaurar carpetas ajenas al importar.
+        payload["game_dir"] = ""
+        payload["icon_path"] = ""
+        skipped = {"logs", "screenshots", "crash-reports"}
         try:
             with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr("instance.json", json.dumps(payload, indent=2,
@@ -414,28 +421,24 @@ class InstanceStore:
                         if not path.is_file():
                             continue
                         relative = path.relative_to(folder)
+                        if relative.parts[0].lower() in skipped:
+                            continue
                         archive.write(path, f"minecraft/{relative.as_posix()}")
                 icon = Path(str(instance.get("icon_path") or ""))
-                if icon.is_file():
+                if icon.is_file() and icon.name.lower() != "blockys-icon.png":
                     try:
-                        inside = (icon.resolve() == folder.resolve()
-                                  or folder.resolve() in icon.resolve().parents)
-                    except OSError:
-                        inside = False
-                    if not inside:
-                        try:
-                            import io
+                        import io
 
-                            from PIL import Image
-                            with Image.open(icon) as source:
-                                image = source.convert("RGBA")
-                                image.thumbnail((256, 256), Image.LANCZOS)
-                                buffer = io.BytesIO()
-                                image.save(buffer, "PNG")
-                            archive.writestr("minecraft/blockys-icon.png",
-                                             buffer.getvalue())
-                        except (OSError, ValueError):
-                            pass
+                        from PIL import Image
+                        with Image.open(icon) as source:
+                            image = source.convert("RGBA")
+                            image.thumbnail((256, 256), Image.LANCZOS)
+                            buffer = io.BytesIO()
+                            image.save(buffer, "PNG")
+                        archive.writestr("minecraft/blockys-icon.png",
+                                         buffer.getvalue())
+                    except (OSError, ValueError):
+                        pass
             os.replace(part, dest)
         except Exception:
             try:

@@ -6,9 +6,9 @@ import re
 import shutil
 import sys
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
 from . import net, paths
 from .util import load_json, safe_extract, save_json
@@ -286,6 +286,7 @@ def _library_tasks(version_data: dict, features: dict):
     tasks: list[net.Task] = []
     classpath: list[Path] = []
     natives: list[Path] = []
+    unverified: list[Path] = []
     for lib in version_data.get("libraries", []):
         if not rules_allow(lib.get("rules"), features):
             continue
@@ -301,6 +302,8 @@ def _library_tasks(version_data: dict, features: dict):
             if artifact.get("url"):
                 tasks.append(net.Task(artifact["url"], dest, artifact.get("sha1"),
                                       None, artifact.get("size")))
+                if not artifact.get("sha1"):
+                    unverified.append(dest)
             classpath.append(dest)
         natives_map = lib.get("natives") or {}
         classifier = natives_map.get(OS_NAME)
@@ -313,7 +316,28 @@ def _library_tasks(version_data: dict, features: dict):
                     tasks.append(net.Task(info["url"], dest, info.get("sha1"),
                                           None, info.get("size")))
                 natives.append(dest)
-    return tasks, classpath, natives
+                if info.get("url") and not info.get("sha1"):
+                    unverified.append(dest)
+    return tasks, classpath, natives, unverified
+
+
+def _verify_files(classpath: list[Path], natives: list[Path],
+                  unverified: list[Path]) -> None:
+    missing: list[str] = []
+    for path in [*classpath, *natives]:
+        try:
+            if not path.is_file() or path.stat().st_size <= 0:
+                missing.append(path.name)
+        except OSError:
+            missing.append(path.name)
+    broken = [path.name for path in unverified
+              if path.is_file() and path.suffix.lower() == ".jar"
+              and not zipfile.is_zipfile(path)]
+    if missing or broken:
+        names = ", ".join((missing + broken)[:3])
+        raise net.DownloadError(
+            f"Archivos del juego incompletos ({names}). Iniciá de nuevo para "
+            "que Blockys repare la descarga.")
 
 
 @dataclass
@@ -373,7 +397,8 @@ def install(entry: dict, version_data: dict, settings: dict, features: dict,
         base_tasks.append(net.Task(client_info["url"], client_jar, client_info.get("sha1"),
                                    None, client_info.get("size")))
 
-    lib_tasks, classpath, natives_jars = _library_tasks(version_data, features)
+    (lib_tasks, classpath, natives_jars,
+     unverified_libs) = _library_tasks(version_data, features)
     base_tasks.extend(lib_tasks)
 
     log_config = None
@@ -397,6 +422,15 @@ def install(entry: dict, version_data: dict, settings: dict, features: dict,
     net.download_many(base_tasks, workers=12,
                       on_progress=_scale(on_progress, 0.0, 0.25, "Bibliotecas"),
                       cancel_event=cancel_event)
+    _verify_files(classpath, natives_jars, unverified_libs)
+    try:
+        jar_ok = client_jar.is_file() and client_jar.stat().st_size > 0
+    except OSError:
+        jar_ok = False
+    if not jar_ok:
+        raise net.DownloadError(
+            "Falta el JAR del cliente de Minecraft. Iniciá de nuevo para que "
+            "Blockys repare la descarga.")
 
     asset_count = 0
     index_data = load_json(index_path, {}) if index_path else {}

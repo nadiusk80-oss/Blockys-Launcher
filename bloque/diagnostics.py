@@ -65,7 +65,8 @@ _LOG_RULES = (
     },
     {
         "tokens": ("glfw error", "failed to create glfw window",
-                   "pixel format not accelerated", "opengl", "wgl"),
+                   "pixel format not accelerated", "opengl error",
+                   "no opengl context"),
         "title": "Problema gráfico",
         "hint": "Actualizá los controladores de la placa de video y evitá "
                 "forzar OpenGL por software. En equipos viejos probá una "
@@ -245,13 +246,21 @@ def build_report(settings: dict, instance_store, manifest: dict | None = None,
     return "\n".join(lines)
 
 
+def _decode_log(raw: bytes) -> str:
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("mbcs" if sys.platform == "win32" else "latin-1",
+                          "replace")
+
+
 def _copy_log(archive: zipfile.ZipFile, path: Path, name: str) -> None:
     try:
         with open(path, "rb") as handle:
             handle.seek(0, os.SEEK_END)
             size = handle.tell()
             handle.seek(max(0, size - MAX_LOG_BYTES))
-            text = handle.read().decode("utf-8", "replace")
+            text = _decode_log(handle.read())
     except OSError:
         return
     archive.writestr(name, redact(text))

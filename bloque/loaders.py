@@ -125,8 +125,12 @@ def _neoforge_version(game: str, loader_version: str, on_status) -> str:
     parts = game.split(".")
     if len(parts) < 2:
         raise LoaderError(f"No se pudo interpretar la version {game} para NeoForge")
-    prefix = f"{parts[1]}.{parts[2]}." if game.startswith("1.") and len(parts) >= 3 \
-        else f"{parts[0]}.{parts[1]}."
+    # NeoForge usa <minor>.<patch>.* para 1.x (1.21 -> 21.0.*, 1.21.1 -> 21.1.*)
+    if game.startswith("1."):
+        patch = parts[2] if len(parts) > 2 else "0"
+        prefix = f"{parts[1]}.{patch}."
+    else:
+        prefix = f"{parts[0]}."
     text = _http_text(f"{NEOFORGE_MAVEN}/net/neoforged/neoforge/maven-metadata.xml")
     try:
         root = ET.fromstring(text)

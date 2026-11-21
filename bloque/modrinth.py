@@ -123,8 +123,16 @@ def _install_version(version: dict, instance: dict, folder: str,
     target_dir = instances_instance_dir(instance) / folder
     target_dir.mkdir(parents=True, exist_ok=True)
     dest = target_dir / filename
+    disabled = dest.with_name(dest.name + instances.MOD_SUFFIX)
     if hash_value and hash_value in installed:
-        return dest
+        if dest.is_file():
+            return dest
+        if disabled.is_file():
+            try:
+                disabled.rename(dest)
+                return dest
+            except OSError:
+                pass
     if on_status:
         on_status(f"Descargando {filename}...")
     try:
@@ -181,6 +189,10 @@ def install(project_id: str, instance: dict, project_type: str = "mod",
     if not folder:
         raise ModrinthError("Ese tipo de proyecto no se puede instalar aqui")
     loader = instance.get("loader", "vanilla")
+    if project_type == "mod" and loader not in LOADER_CATEGORIES:
+        raise ModrinthError(
+            "Esta instancia no tiene un cargador de mods. Usa una instancia "
+            "con Fabric, Forge, NeoForge o Quilt para instalar mods.")
     versions = _compatible_versions(
         project_id, loader if project_type == "mod" else "",
         str(instance.get("version") or ""))
@@ -407,6 +419,8 @@ def import_mrpack(source: Path, store: instances.InstanceStore,
                 _extract_overrides(archive, "overrides/", folder)
             if any(name.startswith("client-overrides/") for name in names):
                 _extract_overrides(archive, "client-overrides/", folder)
+            if on_progress:
+                on_progress(1.0, "Modpack instalado")
             store.ensure_dirs(instance)
             store.save()
             return store.by_id(instance["id"]) or instance

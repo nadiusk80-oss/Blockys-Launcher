@@ -12,13 +12,41 @@ from pathlib import Path
 from tkinter import filedialog
 
 from . import diagnostics, instances, modrinth, servers
-from .ui import (ACCENT, BG, BORDER, BORDER_SOFT, CARD, DANGER, DISPLAY,
-                 FAINT, FONT, GRASS, LOG_BG, MONO, MUTED, PANEL, TEXT,
-                 WARN, Button, Check, Input, Progress, ScrollFrame, Select,
-                 Slider, ThinScroll, divider, enable_dark_titlebar, label,
-                 section, set_app_icon, show_error, show_info, show_warning,
-                 work_area_rect)
-
+from .ui import (
+    ACCENT,
+    BG,
+    BORDER,
+    BORDER_SOFT,
+    CARD,
+    DANGER,
+    DISPLAY,
+    FAINT,
+    FONT,
+    GRASS,
+    LOG_BG,
+    MONO,
+    MUTED,
+    PANEL,
+    TEXT,
+    WARN,
+    Button,
+    Check,
+    Input,
+    Progress,
+    ScrollFrame,
+    Select,
+    Slider,
+    ThinScroll,
+    divider,
+    enable_dark_titlebar,
+    label,
+    section,
+    set_app_icon,
+    show_error,
+    show_info,
+    show_warning,
+    work_area_rect,
+)
 
 LOADER_LABELS = ["Vanilla", "Fabric", "Quilt", "Forge", "NeoForge"]
 LOADER_BY_LABEL = {label.lower(): key for key, label in instances.LOADERS.items()}
@@ -1841,7 +1869,7 @@ class InstancesDialog(tk.Toplevel):
         if was_active:
             self.app._instance = None
             self.app._apply_instance(self._current)
-            self.app._refresh_instances()
+        self.app._refresh_instances()
         self._refresh()
         self._status(f"Instancia eliminada: {deleted}")
 

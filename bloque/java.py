@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 from pathlib import Path
 
 from . import net, paths
@@ -116,6 +117,7 @@ def ensure_temurin(major: int, on_progress=None, on_status=None,
     paths.ensure_dirs()
     target = major
     releases = []
+    last_error: Exception | None = None
     for _ in range(3):
         installed = installed_runtime(target)
         if installed:
@@ -128,10 +130,18 @@ def ensure_temurin(major: int, on_progress=None, on_status=None,
             on_status(f"Buscando Temurin {target} en Adoptium...")
         try:
             releases = _adoptium_query(target)
-        except Exception:
-            releases = []
+            last_error = None
+        except Exception as exc:
+            last_error = exc
+            releases = None
         if releases:
             break
+        if releases is None:
+            # Falla de red o del servidor: reintentar el mismo Java major.
+            if on_status:
+                on_status(f"Adoptium no respondio, reintentando {target}...")
+            time.sleep(1.5)
+            continue
         fallback = FALLBACK_MAJOR.get(target)
         if fallback is None:
             raise _missing_java(target)
@@ -140,6 +150,10 @@ def ensure_temurin(major: int, on_progress=None, on_status=None,
         target = fallback
 
     if not releases:
+        if last_error is not None:
+            raise RuntimeError(
+                f"No se pudo consultar Adoptium para Java {target}: "
+                f"{last_error}") from last_error
         raise _missing_java(target)
 
     home = _runtime_home(target)
