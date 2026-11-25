@@ -199,7 +199,7 @@ versions that require Java 25 (26.3 and 26.4-snapshot) run without extra setup. 
 changes the app name, icons, logo, accent color and package id (`com.blockys.movil`), and uses
 its own build workflow. The modified source, the attribution notices and the list of changes are
 published in [nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil), and
-the APK is available in its Releases section (`Blockys-Mobile-2.0.4.apk`).
+the APK is available in its Releases section (`Blockys-Mobile-2.0.7.apk`).
 
 ## Blockys iOS (iPhone and iPad)
 
@@ -211,11 +211,11 @@ v3.0 (GPL-3.0). The fork changes the app name, icons, logo, interface strings, p
 
 It runs Minecraft: Java Edition on iOS 14 to 18 with the Java 8, 17, 21 and 25 runtimes
 included, and supports Forge, Fabric, NeoForge, Quilt and OptiFine profiles. Local (offline)
-accounts work like in Blockys Mobile 2.0.4: create one, versions download with it and no
+accounts work like in Blockys Mobile 2.0.7: create one, versions download with it and no
 Microsoft account is needed. JIT is required (TrollStore or a JIT enabler such as AltStore,
 SideStore or StikDebug), and iOS 26 or later is not supported because Apple removed the JIT
 paths the launcher relies on. The IPA is built by GitHub Actions on a macOS runner and
-published as `Blockys-iOS-1.0.2.ipa` (unsigned) and `Blockys-iOS-1.0.2-trollstore.tipa` in
+published as `Blockys-iOS-1.0.4.ipa` (unsigned) and `Blockys-iOS-1.0.4-trollstore.tipa` in
 [nadiusk80-oss/Blockys-iOS](https://github.com/nadiusk80-oss/Blockys-iOS), together with the
 full modified source and the notice file.
 
