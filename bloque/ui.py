@@ -1247,23 +1247,33 @@ class SettingsDialog(tk.Toplevel):
     def _install_missing(self) -> None:
         if self._installing:
             return
-        majors = [major for major in java.JAVA_MAJORS
-                  if not java.installed_runtime(major)]
-        if not majors:
-            self.status_var.set("Todos los runtimes ya están instalados")
-            return
-        if not ask_confirm(
-                self, "Instalar Java Temurin",
-                "Se instalarán los runtimes que faltan: "
-                + ", ".join(str(major) for major in majors)
-                + ".\n\nPuede tardar varios minutos y ocupar cientos de MB.",
-                ok_text="Instalar", danger=False):
-            return
         self._installing = True
         self.install_btn.configure(state="disabled")
-        self.progress["maximum"] = len(majors) * 100
+        self.progress["maximum"] = 100
         self.progress["value"] = 0
         self.status_var.set("Comprobando runtimes...")
+
+        def scan():
+            try:
+                majors = [major for major in java.JAVA_MAJORS
+                          if not java.installed_runtime(major)]
+            except Exception as exc:
+                self._queue.put(("jscan", (None, str(exc))))
+            else:
+                self._queue.put(("jscan", (majors, None)))
+
+        threading.Thread(target=scan, daemon=True).start()
+
+    def _reset_install(self, message: str) -> None:
+        self._installing = False
+        self.install_btn.configure(state="normal")
+        self.progress["value"] = 0
+        self.status_var.set(message)
+
+    def _start_install(self, majors: list[int]) -> None:
+        self.progress["maximum"] = len(majors) * 100
+        self.progress["value"] = 0
+        self.status_var.set("Instalando runtimes...")
 
         def work():
             try:
@@ -1301,6 +1311,23 @@ class SettingsDialog(tk.Toplevel):
                 kind, payload = self._queue.get_nowait()
                 if kind == "statuses":
                     self._apply_statuses(payload)
+                elif kind == "jscan":
+                    majors, error = payload
+                    if error:
+                        self._reset_install(f"Error al comprobar Java: {error}")
+                    elif not majors:
+                        self._reset_install(
+                            "Todos los runtimes ya están instalados")
+                    elif ask_confirm(
+                            self, "Instalar Java Temurin",
+                            "Se instalarán los runtimes que faltan: "
+                            + ", ".join(str(major) for major in majors)
+                            + ".\n\nPuede tardar varios minutos y ocupar "
+                            "cientos de MB.",
+                            ok_text="Instalar", danger=False):
+                        self._start_install(majors)
+                    else:
+                        self._reset_install("Instalación cancelada")
                 elif kind == "jprogress":
                     value, text = payload
                     self.progress["value"] = value
@@ -1329,7 +1356,7 @@ class SettingsDialog(tk.Toplevel):
     def _save(self) -> None:
         if self.java_mode.get() == "custom":
             java_path = self.java_path_var.get().strip()
-            if not java_path or not Path(java_path).is_file():
+            if not java_path or not Path(java_path).exists():
                 show_warning(
                     self, "Java",
                     "Elige un java.exe válido o vuelve a Temurin automático.")

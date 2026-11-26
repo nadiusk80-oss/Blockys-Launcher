@@ -838,7 +838,7 @@ class InstancesDialog(tk.Toplevel):
         java_mode = JAVA_MODES.get(java_var.get(), "inherit")
         java_path = path_var.get().strip()
         if java_mode == "custom" and (not java_path
-                                      or not Path(java_path).is_file()):
+                                      or not Path(java_path).exists()):
             show_warning(self, "Java",
                          "Elegí un java.exe válido o usá Temurin automático.")
             return
@@ -1437,8 +1437,13 @@ class InstancesDialog(tk.Toplevel):
 
     def _open_servers_file(self) -> None:
         folder = self.store.game_dir(self._current)
-        folder.mkdir(parents=True, exist_ok=True)
-        _open_path(folder)
+        path = servers.servers_file(folder)
+        if not path.is_file():
+            folder.mkdir(parents=True, exist_ok=True)
+            _open_path(folder)
+            self._status("Todavía no hay servers.dat; se abrió la carpeta del juego")
+            return
+        _open_path(path)
 
     def _ping_server(self, entry: dict, status_widget) -> None:
         try:
@@ -1862,16 +1867,24 @@ class InstancesDialog(tk.Toplevel):
                 "Esta acción no se puede deshacer.", "Eliminar"):
             return
         deleted = self._current["name"]
+        instance_id = self._current["id"]
         was_active = (self.app._instance
-                      and self.app._instance.get("id") == self._current["id"])
-        self.store.remove(self._current["id"])
-        self._current = self.store.selected()
-        if was_active:
-            self.app._instance = None
-            self.app._apply_instance(self._current)
-        self.app._refresh_instances()
-        self._refresh()
-        self._status(f"Instancia eliminada: {deleted}")
+                      and self.app._instance.get("id") == instance_id)
+        self._busy = True
+        self._set_buttons(False)
+        self._status("Eliminando instancia...")
+
+        def work():
+            try:
+                self.store.remove(instance_id)
+            except Exception as exc:
+                self._queue.put(("delete_error", str(exc)))
+            else:
+                self._queue.put(("deleted", (deleted, was_active)))
+            finally:
+                self._queue.put(("busy_done", None))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _play_current(self) -> None:
         if not self._current or self._busy:
@@ -1954,6 +1967,18 @@ class InstancesDialog(tk.Toplevel):
                 elif kind == "duplicate_error":
                     self._status("Error al copiar")
                     show_error(self, "Duplicar instancia", str(payload))
+                elif kind == "deleted":
+                    name, was_active = payload
+                    self._current = self.store.selected()
+                    if was_active:
+                        self.app._instance = None
+                        self.app._apply_instance(self._current)
+                    self.app._refresh_instances()
+                    self._refresh()
+                    self._status(f"Instancia eliminada: {name}")
+                elif kind == "delete_error":
+                    self._status("No se pudo eliminar la instancia")
+                    show_error(self, "Eliminar instancia", str(payload))
                 elif kind == "server_status":
                     widget, result, error = payload
                     try:

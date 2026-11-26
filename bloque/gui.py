@@ -607,6 +607,22 @@ class LauncherApp(tk.Tk):
             self.status_var.set("No se pudo copiar la instancia")
             self._log(payload["msg"], "err")
             ui.show_error(self, "Copiar instancia", payload["msg"])
+        elif kind == "instance_deleted":
+            self._busy = False
+            if payload.get("active"):
+                self._instance = None
+                self._apply_instance(self.instance_store.selected())
+            else:
+                self._refresh_instance_views()
+            name = payload.get("name")
+            self.status_var.set(f"Instancia eliminada: {name}")
+            self._log(f"Instancia eliminada: {name}", "dim")
+        elif kind == "instance_delete_error":
+            self._busy = False
+            self._update_instance_sidebar()
+            self.status_var.set("No se pudo eliminar la instancia")
+            self._log(payload["msg"], "err")
+            ui.show_error(self, "Eliminar instancia", payload["msg"])
         elif kind == "instance_exported":
             self._busy = False
             self._update_instance_sidebar()
@@ -1326,16 +1342,25 @@ class LauncherApp(tk.Tk):
                 "Esta acción no se puede deshacer.", ok_text="Eliminar"):
             return
         deleted = instance.get("name")
+        instance_id = instance["id"]
         was_active = (self._instance is not None
-                      and self._instance.get("id") == instance["id"])
-        self.instance_store.remove(instance["id"])
-        if was_active:
-            self._instance = None
-            self._apply_instance(self.instance_store.selected())
-        else:
-            self._refresh_instance_views()
-        self.status_var.set(f"Instancia eliminada: {deleted}")
-        self._log(f"Instancia eliminada: {deleted}", "dim")
+                      and self._instance.get("id") == instance_id)
+        self._busy = True
+        self._set_instance_actions("disabled")
+        self.play_btn.configure(state="disabled", text="ELIMINANDO...")
+        self.status_var.set("Eliminando instancia...")
+        self._log(f"Eliminando instancia {deleted}...", "dim")
+
+        def work():
+            try:
+                self.instance_store.remove(instance_id)
+            except Exception as exc:
+                self._post("instance_delete_error", msg=str(exc))
+            else:
+                self._post("instance_deleted", name=deleted,
+                           active=was_active)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _show_help(self) -> None:
         window = self._help_window
@@ -1574,6 +1599,7 @@ class LauncherApp(tk.Tk):
     def _persist_ui_settings(self) -> None:
         self._settings_job = None
         if self._instance:
+            self._sync_instance_controls()
             return
         settings = dict(self.settings)
         settings["memory_mb"] = int(self.memory_var.get())
@@ -2175,9 +2201,9 @@ class LauncherApp(tk.Tk):
         self._auth_status = None
 
     def _play(self) -> None:
-        override, self._quick_play_override = self._quick_play_override, None
         if self._busy or self._game is not None:
             return
+        override, self._quick_play_override = self._quick_play_override, None
         profile = self.store.selected()
         if not profile:
             ui.show_warning(self, "Cuenta",
@@ -2520,15 +2546,15 @@ class HelpDialog(tk.Toplevel):
 
         ui.divider(content, top=18, bottom=14)
         ui.section(content, "Información").pack(fill="x")
-        paragraph("Novedades de 1.0.3: los argumentos de lanzamiento con "
-                  "espacios o comillas ya no rompen el arranque y el quick play "
-                  "usa su archivo real. La sesión de Microsoft guarda el token "
-                  "renovado al instante, las instancias detectan mods con "
-                  "cualquier mayúscula, se exportan sin rutas personales y el "
-                  "gestor ya no deja instancias fantasma. servers.dat tolera "
-                  "archivos dañados, Modrinth reactiva mods deshabilitados y "
-                  "la instalación verifica bibliotecas y clientes antes de dar "
-                  "una versión por lista.")
+        paragraph("Novedades de 1.0.4: los ajustes de memoria y resolución se "
+                  "guardan aunque haya una instancia seleccionada. Eliminar "
+                  "una instancia ya no congela la ventana y el gestor muestra "
+                  "el progreso. La ruta de Java personalizada acepta también "
+                  "la carpeta del JRE, y un Java que no arranca ya no cuenta "
+                  "como instalado. Modrinth vuelve a resolver dependencias "
+                  "aunque el mod ya estuviera descargado, y «Abrir archivo» en "
+                  "Servidores abre servers.dat. La comprobación de runtimes en "
+                  "Ajustes corre en segundo plano.")
         paragraph("Blockys no distribuye Minecraft. Para jugar en servidores "
                   "premium necesitás una licencia oficial de Minecraft Java "
                   "Edition. No está afiliado a Mojang, Microsoft, Modrinth ni "

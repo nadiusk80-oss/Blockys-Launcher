@@ -21,16 +21,16 @@ The combined installer automatically installs:
 
 Release artifacts are built from the source in this repository by GitHub Actions and are signed through SignPath Foundation. Every signing request requires manual approval by a maintainer.
 
-## What's new in 1.0.3
+## What's new in 1.0.4
 
-- Launch arguments with spaces or quotes no longer break the game command.
-- Quick Play uses a real `logs/quickplay.log` path and the logs folder is created on demand.
-- Microsoft refresh tokens are saved immediately after each rotation.
-- Instances detect mods with any capitalization, export without personal paths and no longer leave ghost tiles in the manager.
-- `servers.dat` survives corrupted entries without shifting indexes.
-- Modrinth re-enables disabled mods and rejects projects for unsupported loaders.
-- Installed libraries and client jars are verified before a version is marked ready.
-- The settings window no longer blocks mouse wheel scrolling, and background errors no longer close the app.
+- Memory and resolution settings are saved even while an instance is selected.
+- Deleting an instance no longer freezes the window, and the manager reports progress.
+- A custom Java path accepts a JRE directory, not only `java.exe`.
+- A Java executable that fails to start is no longer treated as installed.
+- Modrinth resolves required dependencies again when the mod file already exists.
+- The Servers tab "Open file" action opens `servers.dat` instead of the game folder.
+- The runtime check in Settings runs in the background, and Quick Play keeps its log path when a launch is already in progress.
+- The 32-bit Java message appears only on 32-bit Windows.
 
 To verify a signed release on Windows:
 

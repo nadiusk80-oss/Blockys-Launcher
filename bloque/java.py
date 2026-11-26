@@ -69,6 +69,8 @@ def java_version(java_exe: Path) -> str | None:
         )
     except (OSError, subprocess.SubprocessError):
         return None
+    if result.returncode != 0:
+        return None
     text = (result.stderr or "") + (result.stdout or "")
     match = re.search(r'version "([^"]+)"', text)
     if match:
@@ -94,7 +96,7 @@ def _runtime_home(major: int) -> Path:
 
 
 def _missing_java(major: int) -> RuntimeError:
-    if not IS_64:
+    if WINDOWS and not IS_64:
         return RuntimeError(
             f"Temurin no publica Java {major} para Windows de 32 bits. "
             "En 32 bits solo hay Java 8, 11 y 17; esa version de Minecraft "

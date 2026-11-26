@@ -124,23 +124,25 @@ def _install_version(version: dict, instance: dict, folder: str,
     target_dir.mkdir(parents=True, exist_ok=True)
     dest = target_dir / filename
     disabled = dest.with_name(dest.name + instances.MOD_SUFFIX)
+    present = False
     if hash_value and hash_value in installed:
         if dest.is_file():
-            return dest
-        if disabled.is_file():
+            present = True
+        elif disabled.is_file():
             try:
                 disabled.rename(dest)
-                return dest
+                present = True
             except OSError:
                 pass
-    if on_status:
-        on_status(f"Descargando {filename}...")
-    try:
-        net.download_one(file["url"], dest, sha1=hashes.get("sha1"),
-                         sha256=hashes.get("sha256"), size=file.get("size"),
-                         cancel_event=cancel_event)
-    except net.DownloadError as exc:
-        raise ModrinthError(f"Descarga fallida: {exc}") from exc
+    if not present:
+        if on_status:
+            on_status(f"Descargando {filename}...")
+        try:
+            net.download_one(file["url"], dest, sha1=hashes.get("sha1"),
+                             sha256=hashes.get("sha256"), size=file.get("size"),
+                             cancel_event=cancel_event)
+        except net.DownloadError as exc:
+            raise ModrinthError(f"Descarga fallida: {exc}") from exc
     if hash_value:
         installed.add(hash_value)
 
