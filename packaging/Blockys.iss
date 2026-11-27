@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.4"
+  #define MyAppVersion "1.0.5"
 #endif
 #define MyAppName "Blockys"
 #define MyAppPublisher "Blockys"
@@ -30,7 +30,7 @@ CloseApplications=yes
 RestartApplications=no
 AllowNoIcons=yes
 MinVersion=10.0
-VersionInfoVersion=1.0.4.0
+VersionInfoVersion=1.0.5.0
 VersionInfoProductVersion={#MyAppVersion}
 VersionInfoProductName={#MyAppName}
 VersionInfoCompany={#MyAppPublisher}
