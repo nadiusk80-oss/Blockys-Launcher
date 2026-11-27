@@ -21,16 +21,15 @@ The combined installer automatically installs:
 
 Release artifacts are built from the source in this repository by GitHub Actions and are signed through SignPath Foundation. Every signing request requires manual approval by a maintainer.
 
-## What's new in 1.0.4
+## What's new in 1.0.5
 
-- Memory and resolution settings are saved even while an instance is selected.
-- Deleting an instance no longer freezes the window, and the manager reports progress.
-- A custom Java path accepts a JRE directory, not only `java.exe`.
-- A Java executable that fails to start is no longer treated as installed.
-- Modrinth resolves required dependencies again when the mod file already exists.
-- The Servers tab "Open file" action opens `servers.dat` instead of the game folder.
-- The runtime check in Settings runs in the background, and Quick Play keeps its log path when a launch is already in progress.
-- The 32-bit Java message appears only on 32-bit Windows.
+- World backups: back up one world or all worlds, restore them from the Worlds tab, and keep the previous version as a `.old` copy.
+- Optional automatic backup before every launch, with a per-world retention limit.
+- Each instance can run with its own account while the launcher keeps another one selected.
+- Share a game log from the Logs tab: it is uploaded to mclo.gs and the link is copied to the clipboard.
+- HTTP proxy support in Settings for downloads, Modrinth, Java and the game itself.
+- Automatic updates: Blockys checks GitHub Releases on startup, downloads the new installer, installs it in the background and restarts updated. It can be disabled in Settings.
+- The help centre documents backups, log sharing, the proxy and automatic updates.
 
 To verify a signed release on Windows:
 
@@ -45,10 +44,14 @@ signtool verify /pa /v Blockys-Setup-*.exe
 - Automatic Temurin Java download and per-instance Java selection.
 - Modrinth search and installation for mods, resource packs and shaders.
 - Offline accounts and optional Microsoft accounts.
+- Per-instance account selection.
 - Skin import, preview and upload for Microsoft accounts.
 - World management with Quick Play.
+- World backups with restoration, retention and automatic backups before launch.
 - Server management through `servers.dat`.
-- Live console with error and warning highlighting.
+- Live console with error and warning highlighting, plus log sharing through mclo.gs.
+- HTTP proxy support for downloads and the game.
+- Automatic updates from GitHub Releases, with an optional check at startup.
 - Instance import and export.
 - Combined 64-bit and 32-bit Windows installer.
 
@@ -151,6 +154,7 @@ Blockys contacts third-party services only to provide the features requested by 
 - Mojang and Microsoft services for Minecraft versions, authentication and skins.
 - Adoptium for Temurin Java downloads.
 - Modrinth for mod and resource pack search and downloads.
+- GitHub Releases to check for launcher updates. The check only reads the latest release metadata and the installer checksum.
 
 Microsoft account tokens are stored locally. Blockys does not operate its own account server.
 
@@ -199,7 +203,7 @@ versions that require Java 25 (26.3 and 26.4-snapshot) run without extra setup. 
 changes the app name, icons, logo, accent color and package id (`com.blockys.movil`), and uses
 its own build workflow. The modified source, the attribution notices and the list of changes are
 published in [nadiusk80-oss/Blockys-Movil](https://github.com/nadiusk80-oss/Blockys-Movil), and
-the APK is available in its Releases section (`Blockys-Mobile-2.0.7.apk`).
+the APK is available in its Releases section (`Blockys-Mobile-2.0.4.apk`).
 
 ## Blockys iOS (iPhone and iPad)
 
@@ -211,11 +215,11 @@ v3.0 (GPL-3.0). The fork changes the app name, icons, logo, interface strings, p
 
 It runs Minecraft: Java Edition on iOS 14 to 18 with the Java 8, 17, 21 and 25 runtimes
 included, and supports Forge, Fabric, NeoForge, Quilt and OptiFine profiles. Local (offline)
-accounts work like in Blockys Mobile 2.0.7: create one, versions download with it and no
+accounts work like in Blockys Mobile 2.0.4: create one, versions download with it and no
 Microsoft account is needed. JIT is required (TrollStore or a JIT enabler such as AltStore,
 SideStore or StikDebug), and iOS 26 or later is not supported because Apple removed the JIT
 paths the launcher relies on. The IPA is built by GitHub Actions on a macOS runner and
-published as `Blockys-iOS-1.0.4.ipa` (unsigned) and `Blockys-iOS-1.0.4-trollstore.tipa` in
+published as `Blockys-iOS-1.0.2.ipa` (unsigned) and `Blockys-iOS-1.0.2-trollstore.tipa` in
 [nadiusk80-oss/Blockys-iOS](https://github.com/nadiusk80-oss/Blockys-iOS), together with the
 full modified source and the notice file.
 
