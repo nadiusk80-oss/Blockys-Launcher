@@ -18,6 +18,7 @@ from . import (
     APP_TITLE,
     __version__,
     accounts,
+    backups,
     diagnostics,
     instances,
     launch,
@@ -72,6 +73,7 @@ class LauncherApp(tk.Tk):
         super().__init__()
         self._settings_existed = paths.SETTINGS_FILE.is_file()
         self.settings = paths.load_settings()
+        net.configure_proxy(self.settings)
         self.store = ProfileStore()
         self.instance_store = instances.InstanceStore()
         self._instance: dict | None = None
@@ -112,6 +114,9 @@ class LauncherApp(tk.Tk):
         self._collapsed_groups = set(collapsed) if isinstance(collapsed, list) else set()
         self._icon_cache: dict[tuple[str, int, int], object] = {}
         self.events: queue.Queue = queue.Queue()
+        self._update_check_started = False
+        self._update_downloading = False
+        self._update_cancel: threading.Event | None = None
 
         self.title(f"{APP_TITLE} · Minecraft Java")
         area_x, area_y, area_w, area_h = ui.work_area_rect()
@@ -141,6 +146,8 @@ class LauncherApp(tk.Tk):
         if selected_instance is not None:
             self._apply_instance(selected_instance)
         self._load_versions()
+        if self.settings.get("check_updates", True):
+            self.after(3200, self._auto_check_updates)
         if (not self._settings_existed
                 and not self.settings.get("onboarding_done")
                 and not self.instance_store.instances):
@@ -542,6 +549,24 @@ class LauncherApp(tk.Tk):
     def _handle_event(self, kind: str, payload: dict) -> None:
         if kind == "status":
             self.status_var.set(payload["text"])
+        elif kind == "update_ready":
+            self._offer_update(payload["info"])
+        elif kind == "update_progress":
+            self.progress["value"] = max(0.0, min(100.0, payload["pct"]))
+            self.status_var.set(
+                f"Descargando Blockys {payload['tag']}... {payload['pct']}%")
+        elif kind == "update_error":
+            self._update_downloading = False
+            self.progress["value"] = 0
+            self.status_var.set("No se pudo actualizar Blockys")
+            self._log(f"Actualización: {payload['msg']}", "err")
+            ui.show_error(self, "Actualización", payload["msg"])
+        elif kind == "update_ready_to_install":
+            self._update_downloading = False
+            self.progress["value"] = 100
+            self.status_var.set("Reiniciando Blockys para actualizar...")
+            self._log(f"Instalador descargado: {payload['name']}", "ok")
+            self.after(500, self._quit_for_update)
         elif kind == "progress":
             self.progress["value"] = max(0.0, min(100.0, payload["frac"] * 100))
             if payload.get("text"):
@@ -1193,6 +1218,8 @@ class LauncherApp(tk.Tk):
         meta = f"{loader} · Minecraft {instance.get('version', '')}"
         if resolved:
             meta += " · listo"
+        if instance.get("account"):
+            meta += f" · cuenta {instance['account']}"
         self.detail_meta.configure(text=meta)
         try:
             mods = len(self.instance_store.list_mods(instance))
@@ -1516,6 +1543,9 @@ class LauncherApp(tk.Tk):
             paths.save_settings(settings)
         except OSError as exc:
             self._log(f"No se pudieron guardar los ajustes: {exc}", "err")
+        net.configure_proxy(settings)
+        if settings.get("check_updates", True) and not self._update_check_started:
+            self.after(600, self._auto_check_updates)
         if self._instance:
             self._log("Ajustes guardados", "dim")
             return
@@ -2204,12 +2234,21 @@ class LauncherApp(tk.Tk):
         if self._busy or self._game is not None:
             return
         override, self._quick_play_override = self._quick_play_override, None
+        instance = self._instance
         profile = self.store.selected()
+        wanted = (instance or {}).get("account", "")
+        if wanted:
+            match = next((item for item in self.store.profiles
+                          if item.get("name") == wanted), None)
+            if match:
+                profile = match
+            else:
+                self._log(f"La cuenta {wanted} de la instancia ya no existe; "
+                          "se usa la cuenta activa.", "warn")
         if not profile:
             ui.show_warning(self, "Cuenta",
                             "Crea una cuenta local o inicia sesión.")
             return
-        instance = self._instance
         if instance is not None:
             entry = (versions.find_entry(self.manifest, instance["version"])
                      if self.manifest else None)
@@ -2246,6 +2285,17 @@ class LauncherApp(tk.Tk):
     def _launch_worker(self, entry: dict, profile: dict, settings: dict,
                        instance: dict | None = None) -> None:
         try:
+            if instance and instance.get("backup_before_launch"):
+                game_dir = Path(settings["game_dir"])
+                if game_dir.is_dir():
+                    self._post("status", text="Respaldando mundos...")
+                    count = backups.auto_backup(
+                        game_dir, int(instance.get("backup_keep", 5)),
+                        on_status=lambda text: self._post("status", text=text),
+                        cancel_event=self._cancel)
+                    if count:
+                        self._log(f"Respaldos automáticos: {count} mundo(s)",
+                                  "dim")
             if profile.get("type") == "microsoft":
                 self._post("status", text="Comprobando sesión de Microsoft...")
                 accounts.ensure_access_token(
@@ -2402,6 +2452,120 @@ class LauncherApp(tk.Tk):
         except tk.TclError:
             pass
 
+    def _auto_check_updates(self) -> None:
+        if self._update_check_started or self._update_downloading:
+            return
+        self._update_check_started = True
+        if not updates.is_self_update_supported():
+            return
+
+        def work():
+            try:
+                info = updates.check_latest()
+            except Exception:
+                return
+            if info.get("newer") and info.get("installer"):
+                self._post("update_ready", info=info)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _offer_update(self, info: dict) -> None:
+        if not self.winfo_exists() or self._update_downloading:
+            return
+        if not updates.is_self_update_supported():
+            if ui.ask_confirm(
+                    self, "Actualización disponible",
+                    f"Tenés la {info.get('current', __version__)} y la última "
+                    f"publicada es {info.get('tag', '')}.\n\n¿Abrir la página "
+                    "de descarga?",
+                    ok_text="Abrir página", danger=False):
+                webbrowser.open(info.get("url") or updates.RELEASES_URL)
+            return
+        if not info.get("installer"):
+            if ui.ask_confirm(
+                    self, "Actualización disponible",
+                    f"Hay una versión nueva ({info.get('tag', '')}) pero la "
+                    "publicación no incluye instalador.\n\n¿Abrir la página de "
+                    "descarga?",
+                    ok_text="Abrir página", danger=False):
+                webbrowser.open(info.get("url") or updates.RELEASES_URL)
+            return
+        notes = []
+        for line in str(info.get("notes") or "").splitlines():
+            line = line.strip().lstrip("#").strip()
+            if not line or line.startswith("!["):
+                continue
+            notes.append(f"· {line}")
+            if len(notes) >= 5:
+                break
+        message = (f"Hay una versión nueva: Blockys {info.get('tag', '')} "
+                   f"(tenés la {info.get('current', __version__)}).\n\n"
+                   "¿Descargar el instalador y actualizar ahora? Blockys se "
+                   "cerrará, se instalará la versión nueva y se abrirá de "
+                   "nuevo solo.")
+        if notes:
+            message += "\n\nNovedades:\n" + "\n".join(notes)
+        if not ui.ask_confirm(self, "Actualización disponible", message,
+                              ok_text="Actualizar ahora", danger=False):
+            return
+        self._start_self_update(info)
+
+    def _start_self_update(self, info: dict) -> None:
+        if self._update_downloading:
+            return
+        if self._game is not None:
+            ui.show_warning(self, "Minecraft está abierto",
+                            "Cerrá el juego antes de actualizar Blockys.")
+            return
+        if self._busy:
+            ui.show_warning(self, "Blockys está ocupado",
+                            "Esperá a que termine la tarea actual.")
+            return
+        self._update_downloading = True
+        tag = info.get("tag", "")
+        self.progress["value"] = 0
+        self.status_var.set(f"Descargando Blockys {tag}...")
+        self._log(f"Descargando actualización {tag}", "dim")
+        cancel_event = threading.Event()
+        self._update_cancel = cancel_event
+
+        def progress(done, total, _files_done, _files_total):
+            pct = int(done * 100 / total) if total else 0
+            self._post("update_progress", pct=pct, tag=tag)
+
+        def work():
+            try:
+                setup = updates.download_update(
+                    info, on_progress=progress, cancel_event=cancel_event)
+                updates.apply_update(setup)
+            except Exception as exc:
+                self._post("update_error", msg=str(exc))
+            else:
+                self._post("update_ready_to_install", name=setup.name)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _quit_for_update(self) -> None:
+        if self._game is not None:
+            return
+        if self._settings_job is not None:
+            try:
+                self.after_cancel(self._settings_job)
+            except tk.TclError:
+                pass
+            self._settings_job = None
+            try:
+                self._persist_ui_settings()
+            except (OSError, tk.TclError, ValueError):
+                pass
+        if self._pump_job is not None:
+            try:
+                self.after_cancel(self._pump_job)
+            except tk.TclError:
+                pass
+            self._pump_job = None
+        self.destroy()
+
     def _on_close(self) -> None:
         if self._game is not None:
             if not ui.ask_confirm(
@@ -2518,6 +2682,17 @@ class HelpDialog(tk.Toplevel):
             ui.label(row, text, size=9, color=MUTED).pack(side="left")
 
         ui.divider(content, top=18, bottom=14)
+        ui.section(content, "Copias de seguridad").pack(fill="x")
+        paragraph("En la pestaña Mundos podés respaldar un mundo o todos de "
+                  "una vez. Los ZIP quedan en backups dentro de la instancia y "
+                  "se restauran desde la misma pestaña; el mundo anterior se "
+                  "conserva como .old.")
+        paragraph("En Avanzado se activa el respaldo automático antes de cada "
+                  "partida y cuántas copias conservar por mundo.")
+        paragraph("La pestaña Registros incluye Compartir: sube el log a "
+                  "mclo.gs y copia el enlace al portapapeles.")
+
+        ui.divider(content, top=18, bottom=14)
         ui.section(content, "Si algo falla").pack(fill="x")
         paragraph("La pestaña Consola muestra el registro en vivo. El botón "
                   "Diagnóstico revisa errores comunes de memoria, Java, mods y "
@@ -2532,6 +2707,11 @@ class HelpDialog(tk.Toplevel):
 
         ui.divider(content, top=18, bottom=14)
         ui.section(content, "Actualizaciones").pack(fill="x")
+        paragraph("La versión instalada se actualiza sola: al abrir Blockys "
+                  "se comprueba la última publicación de GitHub y, si hay una "
+                  "nueva, se descarga el instalador oficial, se instala en "
+                  "segundo plano y el launcher se abre de nuevo actualizado. "
+                  "Se puede desactivar en Ajustes.")
         update_row = tk.Frame(content, bg=PANEL)
         update_row.pack(fill="x", pady=(6, 0))
         self.update_btn = ui.Button(update_row, "Buscar actualizaciones",
@@ -2546,15 +2726,13 @@ class HelpDialog(tk.Toplevel):
 
         ui.divider(content, top=18, bottom=14)
         ui.section(content, "Información").pack(fill="x")
-        paragraph("Novedades de 1.0.4: los ajustes de memoria y resolución se "
-                  "guardan aunque haya una instancia seleccionada. Eliminar "
-                  "una instancia ya no congela la ventana y el gestor muestra "
-                  "el progreso. La ruta de Java personalizada acepta también "
-                  "la carpeta del JRE, y un Java que no arranca ya no cuenta "
-                  "como instalado. Modrinth vuelve a resolver dependencias "
-                  "aunque el mod ya estuviera descargado, y «Abrir archivo» en "
-                  "Servidores abre servers.dat. La comprobación de runtimes en "
-                  "Ajustes corre en segundo plano.")
+        paragraph("Novedades de 1.0.5: copias de seguridad de mundos con "
+                  "restauración, retención y respaldo automático antes de "
+                  "cada partida; cada instancia puede usar su propia cuenta; "
+                  "los registros se comparten con un enlace de mclo.gs; "
+                  "Ajustes incluye proxy HTTP para descargas y para el juego; "
+                  "y el launcher se actualiza solo a la última versión de "
+                  "GitHub.")
         paragraph("Blockys no distribuye Minecraft. Para jugar en servidores "
                   "premium necesitás una licencia oficial de Minecraft Java "
                   "Edition. No está afiliado a Mojang, Microsoft, Modrinth ni "
@@ -2600,12 +2778,7 @@ class HelpDialog(tk.Toplevel):
         if result["newer"]:
             self.update_status.configure(
                 text=f"Hay una versión nueva: {result['tag']}", fg=GRASS)
-            if ui.ask_confirm(
-                    self, "Actualización disponible",
-                    f"Tenés la {result['current']} y la última publicada es "
-                    f"{result['tag']}.\n\n¿Abrir la página de descarga?",
-                    ok_text="Abrir página"):
-                webbrowser.open(result["url"])
+            self.app._offer_update(result)
         else:
             self.update_status.configure(
                 text=f"Estás al día ({result['current']})", fg=GRASS)

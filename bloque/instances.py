@@ -70,13 +70,16 @@ def _sanitize_import(instance: dict) -> None:
                                             720, 240, 4320)
     instance["custom_resolution"] = bool(instance.get("custom_resolution"))
     instance["aikar_flags"] = bool(instance.get("aikar_flags"))
+    instance["backup_before_launch"] = bool(
+        instance.get("backup_before_launch"))
+    instance["backup_keep"] = _as_int(instance.get("backup_keep"), 5, 1, 50)
     if instance.get("java_mode") not in ("inherit", "temurin", "custom"):
         instance["java_mode"] = "inherit"
     if instance.get("quick_play_type") not in ("none", "world", "server", "realms"):
         instance["quick_play_type"] = "none"
     instance["quick_play_target"] = _as_text(instance.get("quick_play_target"), 200)
     for key in ("java_path", "jvm_args", "game_args", "env_vars", "pre_launch",
-                "post_exit", "group", "notes", "loader_version"):
+                "post_exit", "group", "notes", "loader_version", "account"):
         instance[key] = _as_text(instance.get(key))
     icon = _as_text(instance.get("icon"), 16)
     instance["icon"] = icon if icon in ICON_COLORS else ICON_COLORS[0]
@@ -112,6 +115,9 @@ def _default_instance(store: list[dict], name: str, version: str,
         "post_exit": "",
         "quick_play_type": "none",
         "quick_play_target": "",
+        "account": "",
+        "backup_before_launch": False,
+        "backup_keep": 5,
         "created": int(time.time()),
         "last_played": 0,
     }
@@ -161,6 +167,9 @@ class InstanceStore:
                                                   "realms"):
             instance["quick_play_type"] = "none"
         instance.setdefault("quick_play_target", "")
+        instance.setdefault("account", "")
+        instance.setdefault("backup_before_launch", False)
+        instance.setdefault("backup_keep", 5)
         instance.setdefault("created", int(time.time()))
         instance.setdefault("last_played", 0)
 
@@ -411,6 +420,7 @@ class InstanceStore:
         # Evita filtrar rutas personales y restaurar carpetas ajenas al importar.
         payload["game_dir"] = ""
         payload["icon_path"] = ""
+        payload["account"] = ""
         skipped = {"logs", "screenshots", "crash-reports"}
         try:
             with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as archive:

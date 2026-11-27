@@ -10,8 +10,9 @@ import tkinter as tk
 import zipfile
 from pathlib import Path
 from tkinter import filedialog
+from urllib.parse import urlencode
 
-from . import diagnostics, instances, modrinth, servers
+from . import backups, diagnostics, instances, modrinth, net, servers
 from .ui import (
     ACCENT,
     BG,
@@ -653,6 +654,20 @@ class InstancesDialog(tk.Toplevel):
         group_var = tk.StringVar(value=instance.get("group", ""))
         Input(content, textvariable=group_var).pack(fill="x")
 
+        label(content, "Cuenta de la instancia", size=9, color=TEXT).pack(
+            fill="x", pady=(12, 5))
+        account_names = [item.get("name", "") or "Cuenta"
+                         for item in self.app.store.profiles]
+        account_labels = ["Cuenta activa del launcher"] + account_names
+        account_value = instance.get("account", "")
+        account_combo = Select(content, values=account_labels, height=36)
+        account_combo.pack(fill="x")
+        account_combo.set(account_value if account_value in account_names
+                          else account_labels[0])
+        label(content, "Se usa al lanzar esta instancia, aunque el launcher "
+                       "tenga otra cuenta activa.", size=8, color=FAINT,
+              wrap=680).pack(fill="x", pady=(4, 0))
+
         label(content, "Color de la instancia", size=9, color=TEXT).pack(
             fill="x", pady=(12, 5))
         icon_var = tk.StringVar(value=instance.get("icon") or instances.ICON_COLORS[0])
@@ -795,14 +810,14 @@ class InstancesDialog(tk.Toplevel):
                    name_var, group_var, icon_var, version_picker,
                    loader_combo, loader_version_var, memory_var, custom_var,
                    width_var, height_var, aikar_var, java_var, path_var,
-                   notes_var),
+                   notes_var, account_combo),
                width=180, height=38).pack(side="right")
         tk.Frame(content, bg=PANEL, height=8).pack(fill="x")
 
     def _save_general(self, name_var, group_var, icon_var, version_picker,
                       loader_combo, loader_version_var,
                       memory_var, custom_var, width_var, height_var, aikar_var,
-                      java_var, path_var, notes_var) -> None:
+                      java_var, path_var, notes_var, account_combo) -> None:
         instance = self._current
         if not instance:
             return
@@ -859,6 +874,9 @@ class InstancesDialog(tk.Toplevel):
         instance["java_mode"] = java_mode
         instance["java_path"] = java_path if java_mode == "custom" else ""
         instance["notes"] = notes_var.get().strip()[:500]
+        account = account_combo.get().strip()
+        instance["account"] = ("" if account == "Cuenta activa del launcher"
+                               else account[:48])
         self.store.save()
         self._status("Cambios guardados")
         self._refresh_list()
@@ -914,6 +932,25 @@ class InstancesDialog(tk.Toplevel):
             fill="x", pady=(4, 0))
 
         divider(content, top=14, bottom=12)
+        label(content, "Copias de seguridad", size=9, color=TEXT).pack(
+            fill="x")
+        backup_var = tk.BooleanVar(
+            value=bool(instance.get("backup_before_launch")))
+        Check(content, "Respaldar los mundos antes de cada partida",
+              backup_var, bg=PANEL).pack(anchor="w", pady=(8, 0))
+        keep_row = tk.Frame(content, bg=PANEL)
+        keep_row.pack(fill="x", pady=(8, 0))
+        label(keep_row, "Conservar", size=8, color=MUTED).pack(side="left")
+        keep_var = tk.StringVar(value=str(instance.get("backup_keep", 5)))
+        Input(keep_row, textvariable=keep_var, width=5).pack(
+            side="left", padx=(8, 0))
+        label(keep_row, "copias por mundo", size=8, color=MUTED).pack(
+            side="left", padx=(8, 0))
+        label(content, "Las copias manuales y automáticas se guardan en la "
+                       "carpeta backups de la instancia.", size=8,
+              color=FAINT, wrap=640).pack(fill="x", pady=(4, 0))
+
+        divider(content, top=14, bottom=12)
         label(content, "Inicio rápido (Quick Play)", size=9, color=TEXT).pack(
             fill="x")
         label(content, "Entra directo a un mundo o servidor al abrir el juego. "
@@ -965,12 +1002,13 @@ class InstancesDialog(tk.Toplevel):
         Button(actions, "Guardar cambios", kind="primary",
                command=lambda: self._save_advanced(
                    jvm_var, game_var, env_var, pre_var, post_var,
-                   quick_combo.get(), quick_target_var),
+                   quick_combo.get(), quick_target_var, backup_var, keep_var),
                width=180, height=38).pack(side="right")
         tk.Frame(content, bg=PANEL, height=8).pack(fill="x")
 
     def _save_advanced(self, jvm_var, game_var, env_var, pre_var, post_var,
-                       quick_label, quick_target_var) -> None:
+                       quick_label, quick_target_var, backup_var,
+                       keep_var) -> None:
         instance = self._current
         if not instance:
             return
@@ -989,6 +1027,12 @@ class InstancesDialog(tk.Toplevel):
         instance["post_exit"] = post_var.get().strip()[:1000]
         instance["quick_play_type"] = quick_type
         instance["quick_play_target"] = target[:200] if quick_type != "none" else ""
+        instance["backup_before_launch"] = bool(backup_var.get())
+        try:
+            keep = int(keep_var.get())
+        except (TypeError, ValueError):
+            keep = 5
+        instance["backup_keep"] = max(1, min(50, keep))
         self.store.save()
         self._status("Ajustes avanzados guardados")
         self._refresh_header()
@@ -1214,6 +1258,9 @@ class InstancesDialog(tk.Toplevel):
         Button(toolbar, "Abrir saves", kind="quiet",
                command=lambda: self._open_kind("saves"), width=96, height=28,
                font=(FONT, 8)).pack(side="right")
+        Button(toolbar, "Respaldar todos", kind="quiet",
+               command=self._backup_all_worlds, width=118, height=28,
+               font=(FONT, 8)).pack(side="right", padx=(0, 6))
         Button(toolbar, "Importar", command=self._import_world, width=84,
                height=28, font=(FONT, 8)).pack(side="right", padx=(0, 6))
         scroll = ScrollFrame(parent, bg=PANEL)
@@ -1222,7 +1269,6 @@ class InstancesDialog(tk.Toplevel):
         if not worlds:
             label(scroll.content, "No hay mundos guardados todavía.", size=9,
                   color=FAINT).pack(anchor="w", pady=8)
-            return
         for world in worlds:
             row = tk.Frame(scroll.content, bg=PANEL,
                            highlightbackground=BORDER_SOFT, highlightthickness=1)
@@ -1253,10 +1299,161 @@ class InstancesDialog(tk.Toplevel):
                    command=lambda path=world["path"]: self._export_world(path),
                    width=68, height=26, font=(FONT, 8)).pack(side="right",
                                                              padx=(0, 4))
+            Button(row, "Respaldar", kind="quiet",
+                   command=lambda path=world["path"]: self._backup_world(path),
+                   width=78, height=26, font=(FONT, 8)).pack(side="right",
+                                                             padx=(0, 4))
             Button(row, "Jugar", kind="secondary",
                    command=lambda name=world["name"]: self._play_world(name),
                    width=58, height=26, font=(FONT, 8)).pack(side="right",
                                                              padx=(0, 4))
+
+        divider(scroll.content, top=16, bottom=12)
+        head = tk.Frame(scroll.content, bg=PANEL)
+        head.pack(fill="x")
+        section(head, "Copias de seguridad").pack(side="left", fill="x",
+                                                  expand=True)
+        Button(head, "Abrir carpeta", kind="quiet",
+               command=self._open_backups, width=104, height=26,
+               font=(FONT, 8)).pack(side="right")
+        items = backups.entries(self.store.game_dir(self._current))
+        if not items:
+            label(scroll.content,
+                  "Todavía no hay copias. Usá «Respaldar» en un mundo o "
+                  "activá el respaldo automático en Avanzado.", size=8,
+                  color=FAINT, wrap=640).pack(anchor="w", pady=(6, 8))
+        for entry in items[:30]:
+            row = tk.Frame(scroll.content, bg=PANEL,
+                           highlightbackground=BORDER_SOFT, highlightthickness=1)
+            row.pack(fill="x", pady=(0, 5))
+            info = tk.Frame(row, bg=PANEL)
+            info.pack(side="left", fill="x", expand=True, padx=10, pady=7)
+            label(info, entry["world"], size=9, color=TEXT).pack(anchor="w")
+            try:
+                when = time.strftime("%Y-%m-%d %H:%M",
+                                     time.localtime(entry["modified"]))
+            except (OverflowError, OSError, ValueError):
+                when = ""
+            label(info, f"{when} · {_size_text(entry['size'])} · "
+                        f"{entry['path'].name}", size=8, color=FAINT).pack(
+                anchor="w", pady=(2, 0))
+            Button(row, "Borrar", kind="danger",
+                   command=lambda path=entry["path"]: self._delete_backup(path),
+                   width=64, height=26, font=(FONT, 8)).pack(side="right",
+                                                             padx=(0, 6))
+            Button(row, "Restaurar", kind="secondary",
+                   command=lambda path=entry["path"]: self._restore_backup(path),
+                   width=84, height=26, font=(FONT, 8)).pack(side="right",
+                                                             padx=(0, 4))
+
+    def _backup_world(self, path: Path) -> None:
+        if self._busy:
+            self._status("Esperá a que termine la operación en curso...")
+            return
+        if self.app._game is not None:
+            show_warning(self, "Copias de seguridad",
+                         "Cerrá Minecraft antes de crear una copia.")
+            return
+        self._busy = True
+        game_dir = self.store.game_dir(self._current)
+        self._status("Creando copia de seguridad...")
+
+        def work():
+            try:
+                target = backups.create(
+                    path, game_dir,
+                    on_status=lambda text: self._queue.put(("status", text)))
+            except backups.BackupError as exc:
+                self._queue.put(("backup_error", str(exc)))
+                return
+            self._queue.put(("backup_done", f"Copia creada: {target.name}"))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _backup_all_worlds(self) -> None:
+        if self._busy:
+            self._status("Esperá a que termine la operación en curso...")
+            return
+        if self.app._game is not None:
+            show_warning(self, "Copias de seguridad",
+                         "Cerrá Minecraft antes de crear copias.")
+            return
+        worlds = self.store.worlds(self._current)
+        if not worlds:
+            show_info(self, "Copias de seguridad",
+                      "No hay mundos para respaldar.")
+            return
+        self._busy = True
+        game_dir = self.store.game_dir(self._current)
+        keep = int(self._current.get("backup_keep", backups.DEFAULT_KEEP))
+        self._status("Respaldando todos los mundos...")
+
+        def work():
+            count = 0
+            try:
+                for world in worlds:
+                    backups.create(
+                        world["path"], game_dir,
+                        on_status=lambda text: self._queue.put(("status", text)))
+                    count += 1
+                backups.prune(game_dir, keep)
+            except backups.BackupError as exc:
+                self._queue.put(("backup_error", f"{exc} ({count} copiadas)"))
+                return
+            self._queue.put(("backup_done", f"Copias creadas: {count}"))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _restore_backup(self, path: Path) -> None:
+        if self._busy:
+            self._status("Esperá a que termine la operación en curso...")
+            return
+        if self.app._game is not None:
+            show_warning(self, "Copias de seguridad",
+                         "Cerrá Minecraft antes de restaurar un mundo.")
+            return
+        if not show_confirm(
+                self, "Restaurar mundo",
+                f"Se restaurará {path.name}. Si el mundo ya existe, se "
+                "conserva como copia .old en saves.", "Restaurar"):
+            return
+        self._busy = True
+        game_dir = self.store.game_dir(self._current)
+
+        def work():
+            try:
+                target = backups.restore(
+                    path, game_dir,
+                    on_status=lambda text: self._queue.put(("status", text)))
+            except backups.BackupError as exc:
+                self._queue.put(("restore_error", str(exc)))
+                return
+            self._queue.put(("restore_done", target.name))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _delete_backup(self, path: Path) -> None:
+        if not show_confirm(self, "Eliminar copia",
+                            f"¿Eliminar la copia {path.name}?", "Eliminar"):
+            return
+        try:
+            path.unlink()
+        except OSError as exc:
+            show_error(self, "Copias de seguridad",
+                       f"No se pudo eliminar: {exc}")
+            return
+        self._status("Copia eliminada")
+        self._show_tab("worlds", force=True)
+
+    def _open_backups(self) -> None:
+        folder = backups.folder(self.store.game_dir(self._current))
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            show_error(self, "Copias de seguridad",
+                       f"No se pudo abrir la carpeta: {exc}")
+            return
+        _open_path(folder)
 
     def _play_world(self, name: str) -> None:
         self.app._quick_play_override = ("world", name)
@@ -1714,6 +1911,9 @@ class InstancesDialog(tk.Toplevel):
                font=(FONT, 8)).pack(side="right")
         latest = self.store.latest_log(self._current)
         if latest:
+            Button(toolbar, "Compartir", command=lambda: self._share_log(latest),
+                   width=86, height=28, font=(FONT, 8)).pack(side="right",
+                                                             padx=(0, 6))
             Button(toolbar, "Último log", command=lambda: _open_path(latest),
                    width=92, height=28, font=(FONT, 8)).pack(side="right",
                                                              padx=(0, 6))
@@ -1742,9 +1942,45 @@ class InstancesDialog(tk.Toplevel):
             except OSError:
                 when = ""
             label(info, when, size=8, color=FAINT).pack(anchor="w", pady=(2, 0))
+            Button(row, "Compartir", kind="quiet",
+                   command=lambda path=log: self._share_log(path), width=84,
+                   height=26, font=(FONT, 8)).pack(side="right", padx=(0, 4))
             Button(row, "Abrir", kind="quiet",
                    command=lambda path=log: _open_path(path), width=62,
                    height=26, font=(FONT, 8)).pack(side="right", padx=(0, 8))
+
+    def _share_log(self, path: Path) -> None:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            show_error(self, "Compartir registro",
+                       f"No se pudo leer el registro: {exc}")
+            return
+        if not text.strip():
+            show_warning(self, "Compartir registro",
+                         "El registro está vacío.")
+            return
+        self._status("Subiendo registro a mclo.gs...")
+
+        def work():
+            try:
+                body = urlencode({"content": text}).encode("utf-8")
+                data = net.http_json(
+                    "https://api.mclo.gs/1/log", data=body,
+                    headers={"Content-Type":
+                             "application/x-www-form-urlencoded"})
+                if not data.get("success"):
+                    raise RuntimeError(
+                        str(data.get("error") or "mclo.gs rechazó el registro"))
+                url = str(data.get("url") or "").strip()
+                if not url:
+                    raise RuntimeError("La respuesta no trae ningún enlace")
+            except Exception as exc:
+                self._queue.put(("log_share_error", str(exc)))
+                return
+            self._queue.put(("log_shared", (url, path.name)))
+
+        threading.Thread(target=work, daemon=True).start()
 
     # Actions --------------------------------------------------------
     def _new_instance(self) -> None:
@@ -2000,6 +2236,34 @@ class InstancesDialog(tk.Toplevel):
                 elif kind == "busy_done":
                     self._busy = False
                     self._set_buttons(True)
+                elif kind == "backup_done":
+                    self._busy = False
+                    self._status(str(payload))
+                    self._show_tab("worlds", force=True)
+                elif kind == "backup_error":
+                    self._busy = False
+                    self._status("Error en las copias de seguridad")
+                    show_error(self, "Copias de seguridad", str(payload))
+                elif kind == "restore_done":
+                    self._busy = False
+                    self._status(f"Mundo restaurado: {payload}")
+                    self._show_tab("worlds", force=True)
+                elif kind == "restore_error":
+                    self._busy = False
+                    show_error(self, "Restaurar mundo", str(payload))
+                elif kind == "log_shared":
+                    url, name = payload
+                    try:
+                        self.clipboard_clear()
+                        self.clipboard_append(url)
+                    except tk.TclError:
+                        pass
+                    self._status("Enlace del registro copiado")
+                    show_info(self, "Registro compartido",
+                              f"{name} se subió a mclo.gs:\n\n{url}\n\n"
+                              "El enlace ya está en el portapapeles.")
+                elif kind == "log_share_error":
+                    show_error(self, "Compartir registro", str(payload))
         except queue.Empty:
             pass
         if self.winfo_exists():

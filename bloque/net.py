@@ -10,12 +10,45 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 from . import __version__
 
 USER_AGENT = f"Blockys/{__version__} (Minecraft Java launcher)"
 CHUNK = 262144
+
+_OPENER = None
+
+
+def configure_proxy(settings: dict) -> None:
+    global _OPENER
+    url = None
+    if settings.get("proxy_type") == "http":
+        host = str(settings.get("proxy_host") or "").strip()
+        port = str(settings.get("proxy_port") or "").strip()
+        if host:
+            if not port.isdigit():
+                port = "8080"
+            url = f"http://{host}:{port}"
+    _OPENER = (build_opener(ProxyHandler({"http": url, "https": url}))
+               if url else None)
+
+
+def proxy_label(settings: dict) -> str:
+    if settings.get("proxy_type") != "http":
+        return ""
+    host = str(settings.get("proxy_host") or "").strip()
+    if not host:
+        return ""
+    port = str(settings.get("proxy_port") or "8080").strip()
+    return f"{host}:{port}"
+
+
+def _open(req: Request, timeout: int):
+    opener = _OPENER
+    if opener is not None:
+        return opener.open(req, timeout=timeout)
+    return urlopen(req, timeout=timeout)
 
 
 class Cancelled(Exception):
@@ -68,7 +101,7 @@ def request(url: str, data: bytes | None = None, headers: dict | None = None,
         hdrs.update(headers)
     req = Request(url, data=data, headers=hdrs, method=method)
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        with _open(req, timeout=timeout) as resp:
             return resp.status, resp.read()
     except HTTPError as exc:
         raise HttpError(exc.code, exc.read(), url) from exc
@@ -172,7 +205,7 @@ def _fetch(task: Task, progress: _Progress, stop: threading.Event,
             headers["Range"] = f"bytes={offset}-"
         resp = None
         try:
-            resp = urlopen(Request(task.url, headers=headers), timeout=60)
+            resp = _open(Request(task.url, headers=headers), timeout=60)
             if offset and getattr(resp, "status", 200) != 206:
                 out = open(tmp, "wb")
                 progress.rollback(offset)

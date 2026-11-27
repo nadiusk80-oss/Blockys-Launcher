@@ -1066,6 +1066,15 @@ class SettingsDialog(tk.Toplevel):
         self.java_path_var = tk.StringVar(value=self.settings.get("java_path", ""))
         self.game_dir_var = tk.StringVar(value=self.settings.get("game_dir", ""))
         self.copy_var = tk.BooleanVar(value=bool(self.settings.get("copy_skin_mod", True)))
+        self.updates_var = tk.BooleanVar(
+            value=bool(self.settings.get("check_updates", True)))
+        self.proxy_type_var = tk.StringVar(
+            value="HTTP" if self.settings.get("proxy_type") == "http"
+            else "Sin proxy")
+        self.proxy_host_var = tk.StringVar(
+            value=self.settings.get("proxy_host", ""))
+        self.proxy_port_var = tk.StringVar(
+            value=str(self.settings.get("proxy_port", "8080")))
         self.status_var = tk.StringVar(value="")
 
         self._build()
@@ -1124,6 +1133,10 @@ class SettingsDialog(tk.Toplevel):
         self._build_java(content)
         divider(content, top=22, bottom=20)
         self._build_game(content)
+        divider(content, top=22, bottom=20)
+        self._build_network(content)
+        divider(content, top=22, bottom=20)
+        self._build_updates(content)
 
         tk.Frame(content, bg=BG, height=10).pack(fill="x")
 
@@ -1200,6 +1213,45 @@ class SettingsDialog(tk.Toplevel):
                height=36).pack(side="left", padx=(8, 0))
         Check(parent, "Copiar skins a CustomSkinLoader al iniciar (skins offline)",
               self.copy_var, bg=BG).pack(anchor="w", pady=(12, 0))
+
+    def _build_network(self, parent) -> None:
+        section(parent, "Red").pack(fill="x")
+        label(parent, "Proxy", size=9, color=TEXT).pack(fill="x", pady=(10, 5))
+        self.proxy_combo = Select(parent, values=["Sin proxy", "HTTP"],
+                                  height=36)
+        self.proxy_combo.pack(fill="x")
+        self.proxy_combo.set(self.proxy_type_var.get())
+        row = tk.Frame(parent, bg=BG)
+        row.pack(fill="x", pady=(8, 0))
+        label(row, "Servidor", size=8, color=MUTED).pack(side="left")
+        self.proxy_host_entry = Input(row, textvariable=self.proxy_host_var,
+                                      width=26)
+        self.proxy_host_entry.pack(side="left", padx=(8, 12))
+        label(row, "Puerto", size=8, color=MUTED).pack(side="left")
+        self.proxy_port_entry = Input(row, textvariable=self.proxy_port_var,
+                                      width=6)
+        self.proxy_port_entry.pack(side="left", padx=(8, 0))
+        label(parent, "Se usa para descargas, Modrinth, Java y también dentro "
+                      "del juego. Solo se admite proxy HTTP.", size=8,
+              color=MUTED, wrap=600).pack(fill="x", pady=(6, 0))
+
+        def sync_proxy(_event=None):
+            enabled = self.proxy_combo.get().strip().lower() == "http"
+            state = "normal" if enabled else "disabled"
+            self.proxy_host_entry.configure(state=state)
+            self.proxy_port_entry.configure(state=state)
+
+        self.proxy_combo.bind("<<ComboboxSelected>>", sync_proxy)
+        sync_proxy()
+
+    def _build_updates(self, parent) -> None:
+        section(parent, "Actualizaciones").pack(fill="x")
+        Check(parent, "Buscar actualizaciones de Blockys al iniciar",
+              self.updates_var, bg=BG).pack(anchor="w", pady=(9, 0))
+        label(parent, "Si hay una versión nueva, Blockys descarga el "
+                      "instalador oficial y se reinicia actualizado.",
+              size=8, color=MUTED, wrap=600).pack(
+            fill="x", padx=(24, 0), pady=(4, 0))
 
     def _toggle_java_path(self) -> None:
         state = "normal" if self.java_mode.get() == "custom" else "disabled"
@@ -1367,5 +1419,22 @@ class SettingsDialog(tk.Toplevel):
         game_dir = self.game_dir_var.get().strip()
         self.settings["game_dir"] = game_dir or str(paths.default_game_dir())
         self.settings["copy_skin_mod"] = bool(self.copy_var.get())
+        self.settings["check_updates"] = bool(self.updates_var.get())
+        proxy_type = ("http" if self.proxy_combo.get().strip().lower() == "http"
+                      else "none")
+        proxy_host = self.proxy_host_var.get().strip()
+        proxy_port = self.proxy_port_var.get().strip() or "8080"
+        if proxy_type == "http":
+            if not proxy_host:
+                show_warning(self, "Proxy",
+                             "Indicá el servidor del proxy o elegí Sin proxy.")
+                return
+            if not proxy_port.isdigit() or not 1 <= int(proxy_port) <= 65535:
+                show_warning(self, "Proxy",
+                             "El puerto del proxy debe estar entre 1 y 65535.")
+                return
+        self.settings["proxy_type"] = proxy_type
+        self.settings["proxy_host"] = proxy_host if proxy_type == "http" else ""
+        self.settings["proxy_port"] = proxy_port
         self.app.apply_settings(self.settings)
         self.destroy()

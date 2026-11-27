@@ -197,6 +197,18 @@ def build_command(plan: InstallPlan, profile: dict, settings: dict,
     jvm_args.extend(_split_args(settings.get("jvm_args", "")))
     game_args.extend(_split_args(settings.get("game_args", "")))
 
+    if settings.get("proxy_type") == "http":
+        proxy_host = str(settings.get("proxy_host") or "").strip()
+        proxy_port = str(settings.get("proxy_port") or "8080").strip()
+        if proxy_host:
+            proxy_port = proxy_port if proxy_port.isdigit() else "8080"
+            jvm_args.extend([
+                f"-Dhttp.proxyHost={proxy_host}",
+                f"-Dhttp.proxyPort={proxy_port}",
+                f"-Dhttps.proxyHost={proxy_host}",
+                f"-Dhttps.proxyPort={proxy_port}",
+            ])
+
     if quick_target:
         supports_quick = "quickPlay" in str(plan.data.get("arguments") or "")
         quick_arg = {"world": "--quickPlaySingleplayer",
